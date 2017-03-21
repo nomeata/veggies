@@ -15,6 +15,7 @@ addons:
     - alex-3.1.4
     - happy-1.19.5
     - clang-4.0
+    - llvm-4.0
 
 before_install:
     - export PATH=$HOME/.cabal/bin:$PATH
