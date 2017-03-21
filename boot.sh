@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 dir="$1"
 
@@ -23,6 +23,7 @@ dir="$(readlink -f $dir)"
 mkdir $dir/bin
 mkdir $dir/libexec
 mkdir $dir/lib
+mkdir $dir/include
 mkdir $dir/package.conf.d
 
 ghc-pkg --package-db $dir/package.conf.d recache
@@ -45,7 +46,9 @@ mkdir $dir/lib/rts
 cp -v libHSrts.a $dir/lib/rts
 cd ..
 cp -v boot-data/rts.conf $dir/package.conf.d/
+cp -v boot-data/*.h $dir/include/
 sed -i -e "s,^library-dirs: .*,library-dirs: $dir/lib/rts," $dir/package.conf.d/rts.conf
+sed -i -e "s,^include-dirs: .*,include-dirs: $dir/include," $dir/package.conf.d/rts.conf
 ghc-pkg --package-db $dir/package.conf.d recache
 
 

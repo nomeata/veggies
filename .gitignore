@@ -22,3 +22,5 @@ data
 test/Test
 boot-out
 Setup
+*.a
+a.out
