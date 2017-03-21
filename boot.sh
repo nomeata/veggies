@@ -39,7 +39,7 @@ __END__
 chmod +x  $dir/bin/veggies
 
 cd fake-rts
-clang-4.0 -c rts.ll
+clang-3.9 -c rts.ll
 ar rcs libHSrts.a rts.o
 mkdir $dir/lib/rts
 cp -v libHSrts.a $dir/lib/rts
