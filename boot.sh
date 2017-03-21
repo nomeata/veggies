@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 dir="$1"
 
@@ -19,7 +19,7 @@ fi
 if ! [ -d boot-data ]; then echo "Could not find ./boot-data/."; exit 1; fi
 
 mkdir $dir
-dir="$(realpath $dir)"
+dir="$(readlink -f $dir)"
 mkdir $dir/bin
 mkdir $dir/libexec
 mkdir $dir/lib
@@ -39,7 +39,7 @@ __END__
 chmod +x  $dir/bin/veggies
 
 cd fake-rts
-clang-3.9 -c rts.ll
+clang-4.0 -c rts.ll
 ar rcs libHSrts.a rts.o
 mkdir $dir/lib/rts
 cp -v libHSrts.a $dir/lib/rts

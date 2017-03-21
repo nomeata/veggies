@@ -1,0 +1,31 @@
+sudo: false
+language: generic
+dist: trusty
+
+addons:
+  apt:
+    sources:
+    - hvr-ghc
+    - ubuntu-toolchain-r-test # useful dependencies of llvm
+    - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-4.0 main'
+      key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+    packages:
+    - cabal-install-1.24
+    - ghc-8.0.1
+    - alex-3.1.4
+    - happy-1.19.5
+    - clang-4.0
+
+before_install:
+    - export PATH=$HOME/.cabal/bin:$PATH
+    - export PATH=/opt/cabal/1.24/bin:$PATH
+    - export PATH=/opt/alex/3.1.4/bin:$PATH
+    - export PATH=/opt/happy/1.19.5/bin:$PATH
+    - export PATH=/opt/ghc/8.0.1/bin:$PATH
+
+install:
+    # install ghcjs
+    - cabal update
+
+script:
+    - ./boot.sh out/
