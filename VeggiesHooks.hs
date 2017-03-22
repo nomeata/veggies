@@ -151,6 +151,7 @@ veggiesCompileModule env core mod = compile
     compile = do
       core_binds <- corePrepPgm env mod' (ms_location mod) (cg_binds core) (cg_tycons core)
       let vellvm_ast = Veggies.genCode (moduleName (ms_mod mod)) (cg_tycons core) core_binds
+      -- putStr $ groom vellvm_ast
       let llvm_ast = LLVM.convModule vellvm_ast
       -- putStr $ groom llvm_ast
       ir <- LLVM.ast2Assembly llvm_ast

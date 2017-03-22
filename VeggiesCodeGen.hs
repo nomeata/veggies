@@ -17,6 +17,7 @@ import Name
 import OccName
 import CoreSyn
 import CoreUtils
+import CoreFVs
 import Encoding
 import Outputable
 import PrelNames
@@ -33,12 +34,55 @@ genCode name tycons binds
       decls
       defs
   where
-    defs = concatMap genTopLvlBind binds
+    defs = defaultDefs ++ concatMap genTopLvlBind binds
     decls = [ mallocDecl ]
 
 defaultTyDecls :: [Coq_type_decl]
 defaultTyDecls =
-    [ ]
+    [ Coq_mk_type_decl (Name "hs")    mkClosureTy
+    , Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
+    , Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
+    ]
+
+defaultDefs :: [Coq_definition]
+defaultDefs = [ returnArgDef ]
+
+returnArgDef :: Coq_definition
+returnArgDef = mkCoqDefinition "returnArg"
+    ["clos"]
+    (runG $ returnFromFunction (Name "clos"))
+
+mkClosureTy :: Coq_typ
+mkClosureTy = TYPE_Struct [ enterFunTyP ]
+
+hsTyP :: Coq_typ
+hsTyP = TYPE_Pointer (TYPE_Identified (ID_Global (Name "hs")))
+
+-- An explicit, global function to call
+hsFunTy :: Int -> Coq_typ
+hsFunTy n = TYPE_Function hsTyP (replicate n hsTyP)
+
+-- Entering a closure
+enterFunTy  = TYPE_Function hsTyP [hsTyP]
+enterFunTyP = TYPE_Pointer enterFunTy
+
+mkThunkTy :: Int -> Coq_typ
+mkThunkTy n = TYPE_Struct [ enterFunTyP, TYPE_Array n' hsTyP ]
+  where n' = max 1 n
+
+thunkTy :: Coq_typ
+thunkTy = TYPE_Identified (ID_Global (Name "thunk"))
+
+thunkTyP :: Coq_typ
+thunkTyP = TYPE_Pointer thunkTy
+
+tagTy = TYPE_I 64
+tagTyP = TYPE_Pointer tagTy
+
+mkDataConTy n = TYPE_Struct [ enterFunTyP, tagTy, TYPE_Array n hsTyP ]
+
+dataConTy = TYPE_Identified (ID_Global (Name "dc"))
+dataConTyP = TYPE_Pointer dataConTy
 
 genTopLvlBind :: CoreBind -> [Coq_definition]
 genTopLvlBind (NonRec v rhs) = [ genTopLvlFunction v rhs | isWanted v]
@@ -60,36 +104,42 @@ genTopLvlFunction v rhs =
         (runG (genExpr body >>= returnFromFunction))
   where (params, body) = collectBinders rhs
 
+genMalloc :: Coq_typ -> G Coq_local_id
+genMalloc t = do
+    -- http://stackoverflow.com/a/30830445/946226
+    offset <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr t (t, SV VALUE_Null) [(TYPE_I 32, SV (VALUE_Integer 1))]))
+    size <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint t (localVal offset) (TYPE_I 64)))
+    emitInstr $ INSTR_Call (mallocTy, ID_Global (Name "malloc")) [(TYPE_I 64, localVal size)]
+
 genDataConWorker :: DataCon -> Coq_definition
 genDataConWorker dc = mkCoqDefinition (codeName (getName dc))
     [ paramName n | n <- [0.. dataConRepArity dc-1]] $ runG $ do
-        -- http://stackoverflow.com/a/30830445/946226
-        emitNamedInstr (Name "offset") $
-            INSTR_Op (SV (OP_GetElementPtr dcTyP (dcTyP, SV VALUE_Null) [(TYPE_I 32, SV (VALUE_Integer 1))]))
-        emitNamedInstr (Name "size") $
-            INSTR_Op (SV (OP_Conversion Ptrtoint dcTyP (localVal (Name "offset")) (TYPE_I 64)))
-        emitNamedInstr (Name "dc") $
-            INSTR_Call (mallocTy, ID_Global (Name "malloc")) [(TYPE_I 64, localVal (Name "size"))]
+        dcRawPtr <- genMalloc thisDataConTyP
         emitNamedInstr (Name "dc_casted") $
-            INSTR_Op (SV (OP_Conversion Bitcast hsPtrTy (localVal (Name "dc")) dcTyP))
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (localVal dcRawPtr) thisDataConTyP))
 
-        tagP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr dcTyP (dcTyP, localVal (Name "dc_casted")) [(TYPE_I 32, SV (VALUE_Integer 0)), (TYPE_I 32, SV (VALUE_Integer 0))]))
-        emitInstr $ INSTR_Store False (tagTyP, localVal tagP) (tagTy, SV (VALUE_Integer (dataConTag dc))) Nothing
+        codePtr <- emitInstr $ getElemPtr thisDataConTyP (Name "dc_casted") [0,0]
+        emitInstr $ INSTR_Store False (enterFunTyP, localVal codePtr) (enterFunTyP, globalVal (Name "returnArg")) Nothing
+
+        tagPtr <- emitInstr $ getElemPtr thisDataConTyP (Name "dc_casted") [0,1]
+        emitInstr $ INSTR_Store False (tagTyP, localVal tagPtr) (tagTy, SV (VALUE_Integer (dataConTag dc))) Nothing
 
         forM_ [0..dataConRepArity dc-1] $ \n -> do
-            p <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr dcTyP (dcTyP, localVal (Name "dc_casted")) [(TYPE_I 32, SV (VALUE_Integer 0)), (TYPE_I 32, SV (VALUE_Integer 1)), (TYPE_I 32, SV (VALUE_Integer n))]))
-            emitInstr $ INSTR_Store False (hsPtrTy, localVal p) (hsPtrTy, localVal (Name (paramName n))) Nothing
+            p <- emitInstr $ getElemPtr thisDataConTyP (Name "dc_casted") [0,2,n]
+            emitInstr $ INSTR_Store False (hsTyP, localVal p) (hsTyP, localVal (Name (paramName n))) Nothing
 
-        returnFromFunction (Name "dc")
+        emitNamedInstr (Name "dc_closure") $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (localVal dcRawPtr) hsTyP))
+
+        returnFromFunction (Name "dc_closure")
   where
-    dcTy = TYPE_Struct [ tagTy, TYPE_Array (dataConRepArity dc) hsPtrTy ]
-    dcTyP = TYPE_Pointer dcTy
+    thisDataConTy = mkDataConTy (dataConRepArity dc)
+    thisDataConTyP = TYPE_Pointer thisDataConTy
     paramName n = "dcArg_" ++ show n
 
-hsPtrTy :: Coq_typ
-hsPtrTy = TYPE_Pointer (TYPE_I 8)
+mallocRetTyP = TYPE_Pointer (TYPE_I 8)
+mallocTy = TYPE_Function mallocRetTyP [TYPE_I 64]
 
-mallocTy = TYPE_Function (TYPE_Pointer (TYPE_I 8)) [TYPE_I 64]
 mallocDecl ::  Coq_declaration
 mallocDecl = Coq_mk_declaration
     (Name "malloc")
@@ -108,7 +158,35 @@ mallocDecl = Coq_mk_declaration
 -- A code generation monad
 type G a = StateT Int (Writer [Coq_terminator -> Coq_block]) a
 
-deriving instance Eq Coq_raw_id
+deriving instance Show Coq_raw_id
+deriving instance Show Coq_type_decl
+deriving instance Show Coq_typ
+deriving instance Show Coq_ident
+deriving instance Show Coq_fn_attr
+deriving instance Show Coq_linkage
+deriving instance Show Coq_dll_storage
+deriving instance Show Coq_cconv
+deriving instance Show Coq_declaration
+deriving instance Show Coq_param_attr
+deriving instance Show Coq_visibility
+deriving instance Show Coq_icmp
+deriving instance Show Coq_ibinop
+deriving instance Show Coq_fcmp
+deriving instance Show Coq_fbinop
+deriving instance Show Coq_fast_math
+deriving instance Show Coq_conversion_type
+deriving instance Show a => Show (Ollvm_ast.Expr a)
+deriving instance Show Coq_value
+deriving instance Show Coq_terminator
+deriving instance Show Coq_instr
+deriving instance Show Coq_instr_id
+deriving instance Show Coq_block
+deriving instance Show Coq_definition
+deriving instance Show Coq_toplevel_entity
+deriving instance Show Coq_thread_local_storage
+deriving instance Show Coq_global
+deriving instance Show Coq_metadata
+deriving instance Show Coq_modul
 
 runG :: G () -> [Coq_block]
 runG g = combine $ connect (execWriter (execStateT g 0))
@@ -168,20 +246,27 @@ namedPhiBlock ty blockId pred = do
 ---
 
 returnFromFunction :: Coq_local_id -> G ()
-returnFromFunction lid = emitTerm (TERM_Ret (hsPtrTy, SV (VALUE_Ident (ID_Local lid))))
+returnFromFunction lid = emitTerm (TERM_Ret (hsTyP, SV (VALUE_Ident (ID_Local lid))))
 
 
 genExpr :: CoreExpr -> G Coq_local_id
-genExpr (Case scrut b ty alts) = do
-    s <- genExpr scrut
-    t <- getTag s
-    emitNamedInstr castedScrut $ INSTR_Op (SV (OP_Conversion Bitcast hsPtrTy (localVal s) dataConTy))
+genExpr (Case scrut b _ [(DEFAULT, _, body)]) = do
+    scrut_eval <- genExpr scrut
+    emitNamedInstr (Name (codeName (getName b))) $ noop hsTyP (localVal scrut_eval)
+    genExpr body
+
+genExpr (Case scrut b _ alts) = do
+    scrut_eval <- genExpr scrut
+    emitNamedInstr (Name (codeName (getName b))) $ noop hsTyP (localVal scrut_eval)
+
+    emitNamedInstr scrut_cast $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (localVal scrut_eval) dataConTyP))
+    t <- getTag scrut_cast
     emitTerm $ tagSwitch t [ (tagOf ac, Name (caseAltEntry b (tagOf ac)))
                            | (ac, _, _) <- alts ]
 
     mapM_ genAlt alts
 
-    res <- namedPhiBlock hsPtrTy (Name (caseAltJoin b))
+    res <- namedPhiBlock hsTyP (Name (caseAltJoin b))
         [ (Name (caseAltRet b (tagOf ac)), Name (caseAltExit b (tagOf ac)))
         | (ac, _, _) <- alts ]
     return res
@@ -192,41 +277,75 @@ genExpr (Case scrut b ty alts) = do
             [ ((tagTy, SV (VALUE_Integer n)), (TYPE_Label, ID_Local l))
             | (Just n, l) <- xs ]
 
-    castedScrut = Name (caseScrutCasted b)
+    scrut_cast = Name (caseScrutCasted b)
     tagOf DEFAULT      = Nothing
     tagOf (DataAlt dc) = Just (dataConTag dc)
     genAlt (ac, pats, rhs) = do
         namedBlock (Name (caseAltEntry b (tagOf ac)))
         forM_ (zip [0..] pats) $ \(n,pat) -> do
-            patPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr dataConTy (dataConTy, localVal castedScrut) [(TYPE_I 32, SV (VALUE_Integer 0)), (TYPE_I 32, SV (VALUE_Integer 1)), (TYPE_I 32, SV (VALUE_Integer n))]))
-            emitNamedInstr (Name (codeName (getName pat))) $ INSTR_Load False hsPtrTy (hsPtrTy, localVal patPtr) Nothing
+            patPtr <- emitInstr $ getElemPtr dataConTyP scrut_cast [0,2,n]
+            emitNamedInstr (Name (codeName (getName pat))) $ INSTR_Load False hsTyP (hsTyP, localVal patPtr) Nothing
 
         tmpId <- genExpr rhs
-        emitNamedInstr (Name (caseAltRet b (tagOf ac))) $ noop hsPtrTy (localVal tmpId)
+        emitNamedInstr (Name (caseAltRet b (tagOf ac))) $ noop hsTyP (localVal tmpId)
         namedBr1Block (Name (caseAltExit b (tagOf ac))) (Name (caseAltJoin b))
+
+genExpr (Let binds body) = do
+    mapM_ (uncurry allocThunk) pairs
+    mapM_ (uncurry fillThunk) pairs
+    genExpr body
+  where
+    pairs = flattenBinds [binds]
 
 genExpr e | (Var f, args) <- collectArgs e , not (isLocalVar f) = do
     let n = codeName (getName f)
     args' <- mapM genExpr (filter isValArg args)
     emitInstr $ INSTR_Call (mallocTy, ID_Global (Name n))
-        [(hsPtrTy, localVal a) | a <- args' ]
+        [(hsTyP, localVal a) | a <- args' ]
 
 genExpr (Var v) | isLocalVar v = do
-    return (Name (codeName (getName v)))
+    let v_code_name = (Name (codeName (getName v)))
+    codePtr <- emitInstr $ getElemPtr hsTyP v_code_name [0,0]
+    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, localVal codePtr) Nothing
+    emitInstr $ INSTR_Call (enterFunTyP, ID_Local code) [(hsTyP, localVal v_code_name)]
 
 genExpr e =
     pprTrace "genExpr" (ppr e) $
-    emitInstr $ noop hsPtrTy (SV (VALUE_Null))
+    emitInstr $ noop hsTyP (SV (VALUE_Null))
+
+
+allocThunk :: Var -> CoreExpr -> G ()
+allocThunk v e = do
+    thunkRawPtr <- genMalloc thisThunkTyP
+    emitNamedInstr (Name (codeName (getName v))) $
+        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (localVal thunkRawPtr) hsTyP))
+  where
+    fvs = exprsFreeVarsList [e]
+    thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
+
+fillThunk :: Var -> CoreExpr -> G ()
+fillThunk v e = do
+    castedPtr <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (localVal (Name (codeName (getName v)))) thisThunkTyP))
+    -- TODO: Pointer to code function here
+    forM_ (zip [0..] fvs) $ \(n,fv) -> do
+        p <- emitInstr $ getElemPtr thisThunkTyP castedPtr [0,1,n]
+        emitInstr $ INSTR_Store False (hsTyP, localVal p) (hsTyP, localVal (Name (codeName (getName fv)))) Nothing
+  where
+    fvs = exprsFreeVarsList [e]
+    thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
+
 
 getTag :: Coq_local_id -> G Coq_local_id
-getTag from = do
-    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsPtrTy (localVal from) tagTyP))
-    loaded <- emitInstr $ INSTR_Load False tagTy (tagTyP, localVal casted) Nothing
+getTag scrut_cast = do
+    tagPtr <- emitInstr $ getElemPtr dataConTyP scrut_cast [0,1]
+    loaded <- emitInstr $ INSTR_Load False tagTy (tagTyP, localVal tagPtr) Nothing
     return loaded
 
-tagTy = TYPE_I 64
-tagTyP = TYPE_Pointer tagTy
-dataConTy = TYPE_Pointer (TYPE_Struct [ TYPE_I 64, TYPE_Array 0 hsPtrTy ])
+
+getElemPtr :: Coq_typ -> Coq_local_id -> [Int] -> Coq_instr
+getElemPtr t v path
+    = INSTR_Op (SV (OP_GetElementPtr t (t, localVal v) [(TYPE_I 32, SV (VALUE_Integer n))| n <- path]))
 
 localVal  local_id  = SV (VALUE_Ident (ID_Local local_id))
 globalVal global_id = SV (VALUE_Ident (ID_Global global_id))
@@ -235,12 +354,9 @@ noop ty val = INSTR_Op (SV (OP_Conversion Bitcast ty val ty))
 
 dummyBody :: [Coq_block]
 dummyBody = [ Coq_mk_block (Anon 0)
-                [] (TERM_Ret (hsPtrTy, SV VALUE_Null))
+                [] (TERM_Ret (hsTyP, SV VALUE_Null))
                 (IVoid 1)
             ]
-
-hsFunTy :: Int -> Coq_typ
-hsFunTy n = TYPE_Function hsPtrTy (replicate n hsPtrTy)
 
 mkCoqDefinition :: String -> [String] -> [Coq_block] -> Coq_definition
 mkCoqDefinition n param_names blocks = Coq_mk_definition

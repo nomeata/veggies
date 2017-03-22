@@ -25,6 +25,36 @@ Installation
  * Run `./boot.sh some-directory`.
  * You can now use `some/directory/bin/veggies`.
 
+Heap layout and calling convention
+----------------------------------
+
+Every object is a pointer (`i8*`, in the following also called `hs*`). Even unboxed values (`Int#`) are hidden
+behind a pointer. This makes stuff very uniform.
+
+Every heap object is of the form `{hs* code, … }`.
+
+The two types of unevaluated closures are:
+
+ * A thunk is represented as `{hs* code, hs*[] captured_vars}`.
+   The tag is ignored.
+   Even if the thunk does not capture a single variable, the allocated memory must allow for one (to override it with an indirection).
+   The `code` is called with the pointer to the thunk as an argument. It will
+   evaluate the expression, override the thunk with an indirection to the
+   result, and return a pointer to the result.
+ * An indirection is represented as `{hs* code, hs* indirectee}`.
+   The `code` is called with the pointer to the indirection as an argument, and will simply call the code of that.
+
+The code for value closures is always the same, and simply returns the pointer to the object.
+
+ * A data constructor is represented as `{hs* code, i64 tag, hs*[] args}`, where the
+   tag is positive and indicates which data constructor we have.
+ * An `Int#` value is represented as `{hs* code, i64 val}`.
+ * A function closure is represented as `{hs* code, hs*fun, i64 arity, hs*[] captured_vars}`, where the
+   `fun` is a function pointer. The function expects the `captured_vars` pointer as the first argument, and `arity` further arguments of type `hs*[]`.
+
+How are we handling over- and undersaturated functions so far? Not at all!
+
+
 
 Contact
 -------
