@@ -30,7 +30,11 @@ ghc-pkg --package-db $dir/package.conf.d recache
 
 cp -v boot-data/settings boot-data/platformConstants $dir
 
-ghc -package ghc Main.hs -o $dir/libexec/veggies
+ghc -O -package ghc \
+    -ivellvm-ast-pp/ \
+    Main.hs \
+    -o $dir/libexec/veggies
+
 cat > $dir/bin/veggies <<__END__
 #!/bin/sh
 topdir="$dir"

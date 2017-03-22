@@ -5,15 +5,17 @@ target triple = "x86_64-pc-linux-gnu"
 
 ; External declaration of the puts function
 declare i32 @puts(i8* nocapture) nounwind
+declare extern_weak i64 @ZCMain_main()
 
 ; Definition of main function
-define i32 @main() {   ; i32()*
+define i64 @main() {   ; i32()*
   ; Convert [13 x i8]* to i8  *...
   %cast210 = getelementptr [13 x i8], [13 x i8]* @.str, i64 0, i64 0
 
   ; Call puts function to write out the string to stdout.
   call i32 @puts(i8* %cast210)
-  ret i32 0
+  %ret = call i64 @ZCMain_main()
+  ret i64 %ret
 }
 
 ; Named metadata

@@ -109,10 +109,19 @@ instance Conv Coq_instr Instruction where
         = A.ICmp (conv cmp) (conv (t,a1)) (conv (t,a2)) []
     conv (INSTR_Op (SV (OP_GetElementPtr _ to path)))
         = A.GetElementPtr False (conv to) (map conv path) []
-    conv (INSTR_Load volatile _ to mbAlign)
-        = A.Load volatile (conv to) Nothing (maybe 0 fromIntegral mbAlign) []
+    conv (INSTR_Op (SV (OP_Conversion O.Bitcast ty1 o ty2)))
+        = A.BitCast (conv (ty1, o)) (conv ty2) []
+    conv (INSTR_Op (SV (OP_Conversion O.Ptrtoint ty1 o ty2)))
+        = A.PtrToInt (conv (ty1, o)) (conv ty2) []
+    conv (INSTR_Store volatile o1 o2 mbAlign)
+        = A.Store volatile (conv o1) (conv o2) Nothing (maybe 0 fromIntegral mbAlign) []
+    conv (INSTR_Load volatile _ o mbAlign)
+        = A.Load volatile (conv o) Nothing (maybe 0 fromIntegral mbAlign) []
     conv (INSTR_Call ti tos)
         = A.Call Nothing CC.C [] (Right (conv ti)) [ (conv to, []) | to <- tos ] [] []
+    conv (INSTR_Phi t preds )
+        = A.Phi (conv t) [ (LocalReference (conv t) (conv o), conv l)
+                         | (ID_Local o,SV (VALUE_Ident (ID_Local l))) <- preds ] []
     {-
     conv (INSTR_Call Coq_tident ([] Coq_tvalue)
     conv (INSTR_Phi Coq_typ ([] ((,) Coq_ident Coq_value))
@@ -128,8 +137,11 @@ instance Conv Coq_instr Instruction where
     -}
 
 instance Conv Coq_terminator Terminator where
+    conv (TERM_Br_1 (TYPE_Label, ID_Local nt)) = Br (conv nt) []
     conv (TERM_Br (to, SV o) (TYPE_Label, ID_Local nt) (TYPE_Label, ID_Local ne)) = CondBr (conv o (conv to)) (conv nt) (conv ne) []
     conv (TERM_Ret (t, SV o)) = Ret (Just (conv o (conv t))) []
+    conv (TERM_Switch o (TYPE_Label, ID_Local d) brs) =
+        Switch (conv o) (conv d) [ (conv v (conv t), conv l) | ((t,v),(TYPE_Label, ID_Local l)) <- brs ] []
 
 instance Conv Coq_block  BasicBlock  where
     conv (Coq_mk_block id instrs term term_id) =
@@ -174,8 +186,39 @@ instance Conv Coq_type_decl   Definition where
     conv (Coq_mk_type_decl name typ)
         = TypeDefinition (conv name) (Just (conv typ))
 
-instance Conv Coq_declaration Definition
-
+instance Conv Coq_declaration Definition where
+    conv (Coq_mk_declaration
+        dc_name --  function_id;
+        (TYPE_Function dc_ret_ty dc_args_ty) --  typ; (* INVARIANT--  should be TYPE_Function (ret_t * args_t) *)
+        (dc_ret_attrs, dc_args_attrs) --  list param_attr * list (list param_attr); (* ret_attrs * args_attrs *)
+        dc_linkage     --  option linkage;
+        dc_visibility  --  option visibility;
+        dc_dll_storage --  option dll_storage;
+        dc_cconv       --  option cconv;
+        dc_attrs       --  list fn_attr;
+        dc_section     --  option string;
+        dc_align       --  option int;
+        dc_gc          --  option string;
+        ) = GlobalDefinition $ Function
+                External -- Linkage
+                Default -- Visibility
+                Nothing -- (Maybe StorageClass)
+                CC.C -- CallingConvention
+                (map conv dc_ret_attrs) -- [ParameterAttribute]
+                (conv dc_ret_ty) -- Type
+                (conv dc_name) -- Name
+                ([ Parameter (conv t) (UnName 0) (map conv pas)
+                 | (t,pas) <- zip2Safe dc_args_ty dc_args_attrs
+                 ]
+                , False) -- ([Parameter], Bool), snd indicates varargs
+                [] -- [Either GroupID FunctionAttribute]
+                Nothing -- (Maybe String)
+                Nothing -- (Maybe String)
+                0 -- Word32
+                Nothing -- (Maybe String)
+                Nothing -- (Maybe Constant)
+                [] -- no blocks
+                Nothing -- (Maybe Constant)
 
 
 instance Conv Coq_definition  Definition where
@@ -228,4 +271,7 @@ parseDataLayout = error "no datalayout parser yet"
 
 zip3Safe [] [] [] = []
 zip3Safe (x:xs) (y:ys) (z:zs) = (x,y,z) : zip3Safe xs ys zs
-zip3Safe _ _ _ = error "zip3Safe"
+
+zip2Safe [] [] = []
+zip2Safe (x:xs) (y:ys) = (x,y) : zip2Safe xs ys
+zip2Safe _ _  = error "zip3Safe"

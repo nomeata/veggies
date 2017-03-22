@@ -30,7 +30,12 @@ import           System.IO.Error
 
 import qualified GHC.LanguageExtensions as Ext
 
+import qualified VeggiesCodeGen as Veggies
+import qualified Ast2Ast as LLVM
+import qualified Ast2Assembly as LLVM
+
 import Debug.Trace
+import Text.Groom
 
 --------------------------------------------------
 -- One shot replacement (the oneShot in DriverPipeline
@@ -145,8 +150,12 @@ veggiesCompileModule env core mod = compile
     dflags = hsc_dflags env
     compile = do
       core_binds <- corePrepPgm env mod' (ms_location mod) (cg_binds core) (cg_tycons core)
+      let vellvm_ast = Veggies.genCode (moduleName (ms_mod mod)) (cg_tycons core) core_binds
+      let llvm_ast = LLVM.convModule vellvm_ast
+      -- putStr $ groom llvm_ast
+      ir <- LLVM.ast2Assembly llvm_ast
       -- print "Got Core!"
-      return (B.pack "; woohoo")
+      return (B.pack ir)
       {-
       stg <- coreToStg dflags mod' core_binds
       (stg', cCCs) <- stg2stg dflags mod' stg

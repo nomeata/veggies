@@ -24,3 +24,5 @@ boot-out
 Setup
 *.a
 a.out
+test/*.ll
+vellvm-ast-pp/ShowAst
