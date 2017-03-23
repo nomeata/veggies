@@ -34,7 +34,7 @@ type GenEnv = IdSet
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
 genCode name tycons binds
     = mkCoqModul (moduleNameString name)
-      globals
+      (concat globals)
       defaultTyDecls
       decls
       (defaultDefs ++ catMaybes defs)
@@ -42,10 +42,10 @@ genCode name tycons binds
     env = top_level_ids
     top_level_ids = mkVarSet (bindersOfBinds binds')
     binds' = (NonRec tupDCId (Var tupDCId)) :  binds
-    (globals, defs) = unzip [genStaticFunPtr env v e | (v,e) <- flattenBinds binds', isWanted v]
+    (globals, defs) = unzip [genStaticVal env v e | (v,e) <- flattenBinds binds', isWanted v]
 
     tupDCId = dataConWorkId (tupleDataCon Unboxed 2)
-    decls = [ mallocDecl, topHandlerDecl1, topHandlerDecl2 ]
+    decls = [ mallocDecl, topHandlerDecl ]
 
 defaultTyDecls :: [Coq_type_decl]
 defaultTyDecls =
@@ -122,8 +122,8 @@ isWanted v | Just (tc,_) <- splitTyConApp_maybe (varType v)
            = False
 isWanted v = True
 
-genStaticFunPtr :: GenEnv -> Var -> CoreExpr -> (Coq_global, Maybe Coq_definition)
-genStaticFunPtr env v rhs
+genStaticVal :: GenEnv -> Var -> CoreExpr -> ([Coq_global], Maybe Coq_definition)
+genStaticVal env v rhs
     | idArity v == 0
     , Just dc <- isDataConId_maybe v
     =
@@ -131,22 +131,23 @@ genStaticFunPtr env v rhs
                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
                                , (envTy 0 , SV (VALUE_Array []))
                                ]
-    in ( Coq_mk_global
-           (varRawId v)
-           (mkDataConTy 0) --hsTyP
-           True -- constant
-           (Just val)
-           (Just LINKAGE_External)
-           Nothing
-           Nothing
-           Nothing
-           False
-           Nothing
-           False
-           Nothing
-           Nothing
+    in ( [ Coq_mk_global
+               (varRawId v)
+               (mkDataConTy 0) --hsTyP
+               True -- constant
+               (Just val)
+               (Just LINKAGE_External)
+               Nothing
+               Nothing
+               Nothing
+               False
+               Nothing
+               False
+               Nothing
+               Nothing
+         ]
        , Nothing )
-genStaticFunPtr env v rhs
+genStaticVal env v rhs
     | (Var f, args) <- collectArgs rhs
     , Just dc <- isDataConId_maybe f
     , let val_args = filter isValArg args
@@ -160,40 +161,42 @@ genStaticFunPtr env v rhs
                                , (envTy arity , SV (VALUE_Array args_idents))
                                ]
     in (if length args_idents == dataConRepArity dc then id
-           else pprTrace "genStaticFunPtr arity" (ppr v <+> ppr arity <+> ppr dc))
-       ( Coq_mk_global
-           (varRawId v)
-           (mkDataConTy arity) --hsTyP
-           True -- constant
-           (Just val)
-           (Just LINKAGE_External)
-           Nothing
-           Nothing
-           Nothing
-           False
-           Nothing
-           False
-           Nothing
-           Nothing
+           else pprTrace "genStaticVal arity" (ppr v <+> ppr arity <+> ppr dc))
+       ( [ Coq_mk_global
+             (varRawId v)
+             (mkDataConTy arity) --hsTyP
+             True -- constant
+             (Just val)
+             (Just LINKAGE_External)
+             Nothing
+             Nothing
+             Nothing
+             False
+             Nothing
+             False
+             Nothing
+             Nothing
+          ]
         , Nothing)
   where
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
 
-genStaticFunPtr env v rhs =
-    ( Coq_mk_global
-        (varRawId v)
-        (mkFunClosureTy arity 0) --hsTyP
-        True -- constant
-        (Just val)
-        (Just linkage)
-        Nothing
-        Nothing
-        Nothing
-        False
-        Nothing
-        False
-        Nothing
-        Nothing
+genStaticVal env v rhs =
+    ( [ Coq_mk_global
+          (varRawId v)
+          (mkFunClosureTy arity 0) --hsTyP
+          True -- constant
+          (Just val)
+          (Just linkage)
+          Nothing
+          Nothing
+          Nothing
+          False
+          Nothing
+          False
+          Nothing
+          Nothing
+      ]
     , Just $ genTopLvlFunction env v rhs)
   where
     linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
@@ -293,13 +296,8 @@ mallocDecl = Coq_mk_declaration
     Nothing
 
 
-topHandlerDecl1 :: Coq_declaration
-topHandlerDecl1 = mkHsFunDeclaration LINKAGE_External (Name "GHCziTopHandler_runMainIO") [Name "main"]
-
-topHandlerDecl2 :: Coq_declaration
-topHandlerDecl2 = mkHsFunDeclaration LINKAGE_External (Name "GHCziTopHandler_runMainIO_fun") [Name "main"]
-
-
+topHandlerDecl :: Coq_declaration
+topHandlerDecl = mkHsFunDeclaration LINKAGE_External (Name "GHCziTopHandler_runMainIO") [Name "main"]
 
 -- A code generation monad
 type G a = StateT Int (Writer [Coq_terminator -> Coq_block]) a

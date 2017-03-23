@@ -40,7 +40,10 @@ eq (S n) (S m) = eq n m
 
 main :: IO Nat
 -- main = IO (\s -> (# s, Z #))
-main = IO (\s -> let y = fac (S (S (S Z))) in y `seq` let x = S (S (S (S (S (S (S Z)))))) `eq` y in x `seq` (# s, x #))
+main = IO (\s ->
+    let y = fac (S (S (S Z))) in y `seq`
+    let x = (S (S (S (S (S (S Z)))))) `eq` y in x `seq`
+    (# s, x #))
 
 returnIO :: b -> IO b
 returnIO b = IO (\s -> (# s , b #))
