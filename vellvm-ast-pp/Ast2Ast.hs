@@ -83,7 +83,11 @@ instance Conv Coq_value (Type -> Constant) where
     conv (SV VALUE_Null)                  t = Null t
     conv (SV (VALUE_Struct elems))        _ = AC.Struct Nothing False elems'
         where elems' = [ conv e (conv t) | (t,e) <- elems ]
-
+    conv (SV (VALUE_Array elems))         (ArrayType _ t)
+                                          = AC.Array t elems'
+        where elems' = [ conv e (conv t) | (t,e) <- elems ]
+    conv (SV (OP_Conversion O.Bitcast ty1 o ty2)) _
+        = AC.BitCast (conv o (conv ty1)) (conv ty2)
 
 instance Conv (Expr Coq_value) (Type -> Operand) where
     conv (VALUE_Ident (ID_Local  n)) t = LocalReference t (conv n)
@@ -147,6 +151,11 @@ instance Conv Coq_block  BasicBlock  where
     conv (Coq_mk_block id instrs term term_id) =
         BasicBlock (conv id) (map conv instrs) (conv (term_id, term))
 
+instance Conv Coq_linkage Linkage where
+    conv LINKAGE_External = External
+    conv LINKAGE_Private  = Private
+    conv LINKAGE_Internal = Internal
+
 instance Conv Coq_global Definition where
     conv (Coq_mk_global
         g_ident        -- global_id;
@@ -164,7 +173,7 @@ instance Conv Coq_global Definition where
         g_align        -- option int;
         ) = GlobalDefinition $ GlobalVariable
             (conv g_ident)
-            External -- Linkage
+            (maybe External conv g_linkage)
             Default -- Visibility
             Nothing -- (Maybe StorageClass)
             Nothing -- (Maybe Model)
@@ -200,7 +209,7 @@ instance Conv Coq_declaration Definition where
         dc_align       --  option int;
         dc_gc          --  option string;
         ) = GlobalDefinition $ Function
-                External -- Linkage
+                (maybe External conv dc_linkage)
                 Default -- Visibility
                 Nothing -- (Maybe StorageClass)
                 CC.C -- CallingConvention
@@ -239,7 +248,7 @@ instance Conv Coq_definition  Definition where
         ) =
         GlobalDefinition $
         Function
-            External -- Linkage
+            (maybe External conv dc_linkage)
             Default -- Visibility
             Nothing -- (Maybe StorageClass)
             CC.C -- CallingConvention

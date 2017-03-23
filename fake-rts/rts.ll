@@ -5,7 +5,7 @@ target triple = "x86_64-pc-linux-gnu"
 
 ; External declaration of the puts function
 declare i32 @puts(i8* nocapture) nounwind
-declare extern_weak i64 @ZCMain_main()
+declare extern_weak i64 @ZCMain_main_fun()
 
 ; Definition of main function
 define i64 @main() {   ; i32()*
@@ -14,7 +14,7 @@ define i64 @main() {   ; i32()*
 
   ; Call puts function to write out the string to stdout.
   call i32 @puts(i8* %cast210)
-  %ret = call i64 @ZCMain_main()
+  %ret = call i64 @ZCMain_main_fun()
   ret i64 %ret
 }
 
