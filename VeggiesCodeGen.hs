@@ -25,6 +25,7 @@ import PrelNames
 import TysWiredIn
 import BasicTypes
 import VarSet
+import Literal
 
 import Ollvm_ast
 
@@ -44,7 +45,7 @@ genCode name tycons binds
     top_level_ids = mkVarSet (bindersOfBinds binds)
     (globals, (externals, defs)) =
         bimap concat (bimap concat id . unzip . catMaybes) $
-        unzip [genStaticVal env v e | (v,e) <- flattenBinds binds, isWanted v]
+        unzip [genStaticVal env v e | (v,e) <- flattenBinds binds]
 
 
     tupDCId = dataConWorkId (tupleDataCon Unboxed 2)
@@ -119,13 +120,6 @@ mkFunClosureTy n m =
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
 
--- Lets filter out typeable stuff for now
-isWanted :: Var -> Bool
-isWanted v | Just (tc,_) <- splitTyConApp_maybe (varType v)
-           , getUnique tc `elem` [ trNameTyConKey, trTyConTyConKey, trModuleTyConKey]
-           = False
-isWanted v = True
-
 genStaticVal :: GenEnv -> Var -> CoreExpr -> ([Coq_global], Maybe ([Var], Coq_definition))
 genStaticVal env v rhs
     | idArity v == 0
@@ -157,10 +151,16 @@ genStaticVal env v rhs
     , let val_args = filter isValArg args
     , not (null val_args)
     =
-    let args_idents = [ (hsTyP, cast (idArity v) (ident (varIdent env v)))
-                      | Var v <- val_args ]
+    let args_idents = [ (hsTyP, v)
+                      | e <- val_args , Just v <- return $ getStaticArg e]
+
+        getStaticArg :: CoreExpr -> Maybe Coq_value
+        getStaticArg (Var v) = Just $ cast (idArity v) (ident (varIdent env v))
+        getStaticArg (Lit _) = Just $ SV (VALUE_Null)
+        genStaticVal _ = Nothing
+
         arity = length args_idents
-        val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
+        val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
                                , (envTy arity , SV (VALUE_Array args_idents))
                                ]
@@ -428,6 +428,8 @@ collectMoreValBinders = go []
     go ids body               = (reverse ids, body)
 
 genExpr :: GenEnv -> CoreExpr -> G Coq_ident
+genExpr env (App e a) | isTypeArg a = genExpr env e 
+
 genExpr env (Cast e _) = genExpr env e
 
 genExpr env (Case scrut b _ [(DEFAULT, _, body)]) = do
@@ -459,8 +461,11 @@ genExpr env (Case scrut b _ alts) = do
 
     scrut_cast_raw_id = caseScrutCastedRawId b
     scrut_cast_ident = caseScrutCastedIdent b
+
     tagOf DEFAULT      = Nothing
     tagOf (DataAlt dc) = Just (dataConTag dc)
+    tagOf (LitAlt l)   = Just (fromIntegral (litValue l))
+
     genAlt (ac, pats, rhs) = do
         namedBlock (caseAltEntryRawId b (tagOf ac))
         forM_ (zip [0..] pats) $ \(n,pat) -> do
@@ -536,13 +541,17 @@ genArg env (App e a) | isTyCoArg a = genArg env e
 genArg (Var v) | Just dc <- isDataConWorkId_maybe v = do
     allocateDataCon dc []
 -}
+genArg env (Var v) | isGlobalId v && not (v `elemVarSet` env) = do
+    noteExternalVar v
+    return $ varIdent env v
 genArg env (Var v) | isGlobalId v || v `elemVarSet` env =  do
     -- Should not be necessary once I find out how to cast the global variable to hsTyP
     emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
 genArg env (Var v) = do
     return $ varIdent env v
-genArg env e = pprPanic "genArg" (ppr e)
+genArg env e = pprTrace "genArg" (ppr e) $
+    emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
 
 genLetBind :: GenEnv -> Var -> CoreExpr -> (G (), G ())
 genLetBind env v e
