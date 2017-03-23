@@ -21,6 +21,8 @@ import CoreFVs
 import Encoding
 import Outputable
 import PrelNames
+import TysWiredIn
+import BasicTypes
 import VarSet
 
 import Ollvm_ast
@@ -35,14 +37,14 @@ genCode name tycons binds
       globals
       defaultTyDecls
       decls
-      defs
+      (defaultDefs ++ catMaybes defs)
   where
     env = top_level_ids
-    top_level_ids = mkVarSet (bindersOfBinds binds)
-    globals =
-        [ genStaticFunPtr env v e | (v,e) <- flattenBinds binds, isWanted v ]
-    defs = defaultDefs  ++
-        [ genTopLvlFunction env v e | (v,e) <- flattenBinds binds, isWanted v ]
+    top_level_ids = mkVarSet (bindersOfBinds binds')
+    binds' = (NonRec tupDCId (Var tupDCId)) :  binds
+    (globals, defs) = unzip [genStaticFunPtr env v e | (v,e) <- flattenBinds binds', isWanted v]
+
+    tupDCId = dataConWorkId (tupleDataCon Unboxed 2)
     decls = [ mallocDecl, topHandlerDecl1, topHandlerDecl2 ]
 
 defaultTyDecls :: [Coq_type_decl]
@@ -53,7 +55,9 @@ defaultTyDecls =
     ]
 
 defaultDefs :: [Coq_definition]
-defaultDefs = [ returnArgDef ]
+defaultDefs =
+    [ returnArgDef
+    ]
 
 returnArgDef :: Coq_definition
 returnArgDef = mkEnterFunDefinition
@@ -118,25 +122,85 @@ isWanted v | Just (tc,_) <- splitTyConApp_maybe (varType v)
            = False
 isWanted v = True
 
-genStaticFunPtr :: GenEnv -> Var -> CoreExpr -> Coq_global
-genStaticFunPtr env v rhs =
-    Coq_mk_global
-    (varRawId v)
-    (mkFunClosureTy arity 0) --hsTyP
-    True -- constant
-    (Just val)
-    (Just LINKAGE_External)
-    Nothing
-    Nothing
-    Nothing
-    False
-    Nothing
-    False
-    Nothing
-    Nothing
+genStaticFunPtr :: GenEnv -> Var -> CoreExpr -> (Coq_global, Maybe Coq_definition)
+genStaticFunPtr env v rhs
+    | idArity v == 0
+    , Just dc <- isDataConId_maybe v
+    =
+    let val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
+                               , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
+                               , (envTy 0 , SV (VALUE_Array []))
+                               ]
+    in ( Coq_mk_global
+           (varRawId v)
+           (mkDataConTy 0) --hsTyP
+           True -- constant
+           (Just val)
+           (Just LINKAGE_External)
+           Nothing
+           Nothing
+           Nothing
+           False
+           Nothing
+           False
+           Nothing
+           Nothing
+       , Nothing )
+genStaticFunPtr env v rhs
+    | (Var f, args) <- collectArgs rhs
+    , Just dc <- isDataConId_maybe f
+    , let val_args = filter isValArg args
+    , not (null val_args)
+    =
+    let args_idents = [ (hsTyP, cast (idArity v) (ident (varIdent env v)))
+                      | Var v <- val_args ]
+        arity = length args_idents
+        val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
+                               , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
+                               , (envTy arity , SV (VALUE_Array args_idents))
+                               ]
+    in (if length args_idents == dataConRepArity dc then id
+           else pprTrace "genStaticFunPtr arity" (ppr v <+> ppr arity <+> ppr dc))
+       ( Coq_mk_global
+           (varRawId v)
+           (mkDataConTy arity) --hsTyP
+           True -- constant
+           (Just val)
+           (Just LINKAGE_External)
+           Nothing
+           Nothing
+           Nothing
+           False
+           Nothing
+           False
+           Nothing
+           Nothing
+        , Nothing)
   where
-    (params, body) = collectMoreValBinders rhs
-    arity = length params
+    cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
+
+genStaticFunPtr env v rhs =
+    ( Coq_mk_global
+        (varRawId v)
+        (mkFunClosureTy arity 0) --hsTyP
+        True -- constant
+        (Just val)
+        (Just linkage)
+        Nothing
+        Nothing
+        Nothing
+        False
+        Nothing
+        False
+        Nothing
+        Nothing
+    , Just $ genTopLvlFunction env v rhs)
+  where
+    linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
+            = LINKAGE_Private
+            | otherwise
+            = LINKAGE_External
+    arity = idArity v
     val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
                            , (TYPE_Pointer (hsFunTy arity 0) , ident (funIdent env v))
 
@@ -146,13 +210,20 @@ genStaticFunPtr env v rhs =
     -- casted_val = SV $ OP_Conversion Bitcast (mkFunClosureTy arity 0) val hsTy
 
 genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> Coq_definition
-genTopLvlFunction env v rhs | Just dc <- isDataConWorkId_maybe v = genDataConWorker dc
+genTopLvlFunction env v rhs
+    | Just dc <- isDataConWorkId_maybe v = genDataConWorker dc
 genTopLvlFunction env v rhs =
-    mkHsFunDefinition LINKAGE_External
+    mkHsFunDefinition
+        linkage
         (funRawId v)
         [ varRawId p | p <- params ]
         (runG (genExpr env body >>= returnFromFunction))
-  where (params, body) = collectMoreValBinders rhs
+  where
+    (params, body) = collectMoreValBinders rhs
+    linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
+            = LINKAGE_Private
+            | otherwise
+            = LINKAGE_External
 
 genMalloc :: Coq_typ -> G Coq_ident
 genMalloc t = do
@@ -161,39 +232,47 @@ genMalloc t = do
     size <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint t (ident offset) (TYPE_I 64)))
     emitInstr $ INSTR_Call (mallocTy, ID_Global (Name "malloc")) [(TYPE_I 64, ident size)]
 
-allocateDataCon :: DataCon -> [Coq_ident] -> G Coq_ident
-allocateDataCon dc args = do
-    dcRawPtr <- genMalloc thisDataConTyP
-    dcCasted <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident dcRawPtr) thisDataConTyP))
-
-    codePtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,0]
-    emitInstr $ INSTR_Store False (enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
-
-    tagPtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,1]
-    emitInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, SV (VALUE_Integer (dataConTag dc))) Nothing
-
-    forM_ (zip [0..] args) $ \(n, arg) -> do
-        p <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,2,n]
-        emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident arg) Nothing
-
-    dcClosure <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident dcRawPtr) hsTyP))
-
-    return dcClosure
+allocateDataCon :: Coq_raw_id -> DataCon -> (G (), [Coq_ident] ->  G ())
+allocateDataCon dcName dc = (alloc, fill)
   where
+    alloc = do
+        dcRawPtr <- genMalloc thisDataConTyP
+        emitNamedInstr dcName $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident dcRawPtr) hsTyP))
+
+    fill args = do
+        let dcClosure = ID_Local dcName
+        dcCasted <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dcClosure) thisDataConTyP))
+
+        codePtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,0]
+        emitInstr $ INSTR_Store False (enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
+
+        tagPtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,1]
+        emitInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, SV (VALUE_Integer (dataConTag dc))) Nothing
+
+        forM_ (zip [0..] args) $ \(n, arg) -> do
+            p <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,2,n]
+            emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident arg) Nothing
+
     thisDataConTy = mkDataConTy (dataConRepArity dc)
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
 genDataConWorker :: DataCon -> Coq_definition
-genDataConWorker dc = mkHsFunDefinition LINKAGE_External
+genDataConWorker dc = mkHsFunDefinition linkage
     (funRawId (dataConWorkId dc))
     [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]] $
     runG $ do
-        dc <- allocateDataCon dc
-            [ ID_Local (Name (paramName n)) | n <- [0..dataConRepArity dc - 1]]
-        returnFromFunction dc
+        let (alloc, fill) = allocateDataCon (Name "dc") dc
+        alloc
+        fill [ ID_Local (Name (paramName n)) | n <- [0..dataConRepArity dc - 1]]
+        returnFromFunction (ID_Local (Name "dc"))
   where
+    linkage | isUnboxedTupleCon dc
+            = LINKAGE_Private
+            | otherwise
+            = LINKAGE_External
+
     paramName n = "dcArg_" ++ show n
 
 mallocRetTyP = TYPE_Pointer (TYPE_I 8)
@@ -369,8 +448,9 @@ genExpr env (Case scrut b _ alts) = do
         namedBr1Block (caseAltExitRawId b (tagOf ac)) (caseAltJoinRawId b)
 
 genExpr env (Let binds body) = do
-    mapM_ (uncurry (allocThunk)) pairs
-    mapM_ (uncurry (fillThunk env)) pairs
+    let (allocs, fills) = unzip [ genLetBind env v e | (v,e) <- flattenBinds [binds] ]
+    sequence_ allocs
+    sequence_ fills
     genExpr env body
   where
     pairs = flattenBinds [binds]
@@ -391,27 +471,16 @@ genExpr env e
     code <- emitInstr $ INSTR_Load False thisFunTyP (thisFunTyP, ident codePtr) Nothing
 
     closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
-    args_locals <- mapM genArg args'
+    args_locals <- mapM (genArg env) args'
     emitInstr $ INSTR_Call (thisFunTyP, code) $
         (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
   where
-    genArg (Cast e _) = genArg e
-    genArg (App e a) | isTyCoArg a = genArg e
-    {- Should not be needed
-    genArg (Var v) | Just dc <- isDataConWorkId_maybe v = do
-        allocateDataCon dc []
-    -}
-    genArg (Var v) | isGlobalId v || v `elemVarSet` env =  do
-        -- Should not be necessary once I find out how to cast the global variable to hsTyP
-        emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
-    genArg (Var v) = do
-        return $ varIdent env v
-    genArg e = pprPanic "genArg" (ppr e)
 
+{-
 genExpr env e@(Var v) | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc =
     pprTrace "genExpr" (ppr e) $
     emitInstr $ noop hsTyP (SV (VALUE_Null))
+-}
 
 genExpr env (Var v) | isGlobalId v || v `elemVarSet` env =  do
     -- Should not be necessary once I find out how to cast the global variable to hsTyP
@@ -430,25 +499,46 @@ genExpr env e =
     pprTrace "genExpr" (ppr e) $
     emitInstr $ noop hsTyP (SV (VALUE_Null))
 
+genArg :: GenEnv -> CoreArg -> G Coq_ident
+genArg env (Cast e _) = genArg env e
+genArg env (App e a) | isTyCoArg a = genArg env e
+{- Should not be needed
+genArg (Var v) | Just dc <- isDataConWorkId_maybe v = do
+    allocateDataCon dc []
+-}
+genArg env (Var v) | isGlobalId v || v `elemVarSet` env =  do
+    -- Should not be necessary once I find out how to cast the global variable to hsTyP
+    emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
+genArg env (Var v) = do
+    return $ varIdent env v
+genArg env e = pprPanic "genArg" (ppr e)
 
-allocThunk :: Var -> CoreExpr -> G ()
-allocThunk v e = do
-    thunkRawPtr <- genMalloc thisThunkTyP
-    emitNamedInstr (varRawId v) $
-        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident thunkRawPtr) hsTyP))
-  where
-    fvs = exprsFreeVarsList [e]
-    thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
+genLetBind :: GenEnv -> Var -> CoreExpr -> (G (), G ())
+genLetBind env v e
+    | (Var f, args) <- collectArgs e
+    , Just dc <- isDataConId_maybe f
+    = let (alloc, fill) = allocateDataCon (varRawId v) dc
+          fill' = do
+            arg_locals <- mapM (genArg env) (filter isValArg args)
+            fill arg_locals
+      in (alloc, fill')
 
-fillThunk :: GenEnv -> Var -> CoreExpr -> G ()
-fillThunk env v e = do
-    castedPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (varIdent env v)) thisThunkTyP))
-    -- TODO: Pointer to code function here
-    forM_ (zip [0..] fvs) $ \(n,fv) -> do
-        p <- emitInstr $ getElemPtr thisThunkTyP castedPtr [0,1,n]
-        emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident (varIdent env v)) Nothing
+genLetBind env v e = (alloc, fill)
   where
+    alloc = do
+        thunkRawPtr <- genMalloc thisThunkTyP
+        emitNamedInstr (varRawId v) $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident thunkRawPtr) hsTyP))
+
+    fill = do
+        castedPtr <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (varIdent env v)) thisThunkTyP))
+        -- TODO: Pointer to code function here
+        forM_ (zip [0..] fvs) $ \(n,fv) -> do
+            p <- emitInstr $ getElemPtr thisThunkTyP castedPtr [0,1,n]
+            emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident (varIdent env v)) Nothing
+
     fvs = exprsFreeVarsList [e]
     thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
 
