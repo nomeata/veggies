@@ -21,6 +21,7 @@ if ! [ -d boot-data ]; then echo "Could not find ./boot-data/."; exit 1; fi
 mkdir $dir
 dir="$(readlink -f $dir)"
 mkdir $dir/bin
+mkdir $dir/dist
 mkdir $dir/libexec
 mkdir $dir/lib
 mkdir $dir/include
@@ -58,9 +59,9 @@ ghc-pkg --package-db $dir/package.conf.d recache
 
 cd ghc-prim/
 ghc --make Setup.hs
-./Setup configure --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
-./Setup build
-./Setup install
+./Setup configure --builddir $dir/dist/prim --ghc-option=-keep-llvm-file --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
+./Setup build --builddir $dir/dist/prim
+./Setup install --builddir $dir/dist/prim
 cd ..
 sed -i -e 's,^exposed-modules:,exposed-modules: GHC.Prim,' $dir/package.conf.d/ghc-prim-*.conf
 ghc-pkg --package-db $dir/package.conf.d recache
@@ -68,16 +69,16 @@ ghc-pkg --package-db $dir/package.conf.d recache
 
 cd fake-integer-gmp/
 ghc --make Setup.hs
-./Setup configure --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
-./Setup build
-./Setup install
+./Setup configure --builddir $dir/dist/integer-gmp --ghc-option=-keep-llvm-file --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
+./Setup build     --builddir $dir/dist/integer-gmp
+./Setup install   --builddir $dir/dist/integer-gmp
 cd ..
 
 cd fake-base
 ghc --make Setup.hs
-./Setup configure --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
-./Setup build
-./Setup install
+./Setup configure --builddir $dir/dist/base --ghc-option=-keep-llvm-file --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
+./Setup build     --builddir $dir/dist/base
+./Setup install   --builddir $dir/dist/base
 cd ..
 
 echo "Veggies succesfully bootstraped."
