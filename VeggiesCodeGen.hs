@@ -62,7 +62,7 @@ genCode name tycons binds
     (extra_datacons, real_externals) = partitionEithers
         [ case isDataConWorkId_maybe v of
             Just dc | isUnboxedTupleCon dc -> Left dc
-            Nothing -> Right v
+            _ -> Right v
         | v <- externals ]
 
     (globals2, []) =
@@ -151,19 +151,28 @@ genStaticVal env v rhs
                                , (envTy 0 , SV (VALUE_Array []))
                                ]
     in ( [ TLGlobal $ Coq_mk_global
-               (varRawId v)
+               (varRawIdTmp v)
                (mkDataConTy 0) --hsTyP
                True -- constant
                (Just val)
+               (Just LINKAGE_Private)
+               Nothing
+               Nothing
+               Nothing
+               False
+               Nothing
+               False
+               Nothing
+               Nothing
+         , TLAlias $ Coq_mk_alias
+               (varRawId v)
+               hsTyP
+               (SV (OP_Conversion Bitcast (mkDataConTy 0) (ident (ID_Global (varRawIdTmp v))) hsTyP))
                (Just LINKAGE_External)
                Nothing
                Nothing
                Nothing
                False
-               Nothing
-               False
-               Nothing
-               Nothing
          ]
        , [] )
 genStaticVal env v rhs
@@ -188,11 +197,11 @@ genStaticVal env v rhs
     in (if length args_idents == dataConRepArity dc then id
            else pprTrace "genStaticVal arity" (ppr v <+> ppr arity <+> ppr dc))
        ( [ TLGlobal $ Coq_mk_global
-             (varRawId v)
+             (varRawIdTmp v)
              (mkDataConTy arity) --hsTyP
              True -- constant
              (Just val)
-             (Just LINKAGE_External)
+             (Just LINKAGE_Private)
              Nothing
              Nothing
              Nothing
@@ -201,7 +210,16 @@ genStaticVal env v rhs
              False
              Nothing
              Nothing
-          ]
+         , TLAlias $ Coq_mk_alias
+               (varRawId v)
+               hsTyP
+               (SV (OP_Conversion Bitcast (mkDataConTy arity) (ident (ID_Global (varRawIdTmp v))) hsTyP))
+               (Just LINKAGE_External)
+               Nothing
+               Nothing
+               Nothing
+               False
+         ]
         , [])
   where
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
@@ -209,11 +227,11 @@ genStaticVal env v rhs
 genStaticVal env v rhs =
     let (def, externals) = genTopLvlFunction env v rhs
     in ( [ TLGlobal $ Coq_mk_global
-            (varRawId v)
+            (varRawIdTmp v)
             (mkFunClosureTy arity 0) --hsTyP
             True -- constant
             (Just val)
-            (Just linkage)
+            (Just LINKAGE_Private)
             Nothing
             Nothing
             Nothing
@@ -222,6 +240,15 @@ genStaticVal env v rhs =
             False
             Nothing
             Nothing
+         , TLAlias $ Coq_mk_alias
+               (varRawId v)
+               hsTyP
+               (SV (OP_Conversion Bitcast (mkFunClosureTy arity 0) (ident (ID_Global (varRawIdTmp v))) hsTyP))
+               (Just linkage)
+               Nothing
+               Nothing
+               Nothing
+               False
          , def
          ], externals)
   where
@@ -528,39 +555,8 @@ genExpr env e
         (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
   where
 
-  --- AAARG  I relly need to fix this
-genExpr env e@(Var v) | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc = do
-    noteExternalVar v
-    castedPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
-    codePtr <- emitInstr $ getElemPtr hsTyP castedPtr [0,0]
-    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
-    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident castedPtr)]
-
-genExpr env (Var v) | v `elemVarSet` env =  do
-    -- Should not be necessary once I find out how to cast the global variable to hsTyP
-    castedPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
-    codePtr <- emitInstr $ getElemPtr hsTyP castedPtr [0,0]
-    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
-    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident castedPtr)]
-
-
-genExpr env (Var v) | isGlobalId v && not (v `elemVarSet` env) =  do
-    noteExternalVar v
-    codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
-    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
-    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident (varIdent env v))]
-
-genExpr env (Var v) | v `elemVarSet` env =  do
-    -- Should not be necessary once I find out how to cast the global variable to hsTyP
-    castedPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
-    codePtr <- emitInstr $ getElemPtr hsTyP castedPtr [0,0]
-    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
-    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident castedPtr)]
-
 genExpr env (Var v) = do
+    when (isGlobalId v && not (v `elemVarSet` env)) $ noteExternalVar v
     codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
     code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
     emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident (varIdent env v))]
@@ -572,18 +568,8 @@ genExpr env e =
 genArg :: GenEnv -> CoreArg -> G Coq_ident
 genArg env (Cast e _) = genArg env e
 genArg env (App e a) | isTyCoArg a = genArg env e
-{- Should not be needed
-genArg (Var v) | Just dc <- isDataConWorkId_maybe v = do
-    allocateDataCon dc []
--}
-genArg env (Var v) | isGlobalId v && not (v `elemVarSet` env) = do
-    noteExternalVar v
-    return $ varIdent env v
-genArg env (Var v) | isGlobalId v || v `elemVarSet` env =  do
-    -- Should not be necessary once I find out how to cast the global variable to hsTyP
-    emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
 genArg env (Var v) = do
+    when (isGlobalId v && not (v `elemVarSet` env)) $ noteExternalVar v
     return $ varIdent env v
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
@@ -706,8 +692,13 @@ varIdent env v
     = ID_Global (varRawId v)
     | otherwise
     = ID_Local (varRawId v)
+
 varRawId :: Id ->  Coq_raw_id
 varRawId v = Name (codeNameStr (getName v))
+
+
+varRawIdTmp :: Id ->  Coq_raw_id
+varRawIdTmp v = Name (codeNameStr (getName v) ++ "_tmp")
 
 
 caseScrutCastedIdent :: Var -> Coq_ident
