@@ -4,6 +4,7 @@ module VeggiesCodeGen where
 
 import Data.List
 import Data.Maybe
+import Data.Bifunctor
 import Control.Monad.State
 import Control.Monad.Writer
 
@@ -34,18 +35,21 @@ type GenEnv = IdSet
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
 genCode name tycons binds
     = mkCoqModul (moduleNameString name)
-      (concat globals)
+      (globals ++ external_decls)
       defaultTyDecls
-      decls
-      (defaultDefs ++ catMaybes defs)
+      (defaultDecls)
+      (defaultDefs ++ defs)
   where
     env = top_level_ids
-    top_level_ids = mkVarSet (bindersOfBinds binds')
-    binds' = (NonRec tupDCId (Var tupDCId)) :  binds
-    (globals, defs) = unzip [genStaticVal env v e | (v,e) <- flattenBinds binds', isWanted v]
+    top_level_ids = mkVarSet (bindersOfBinds binds)
+    (globals, (externals, defs)) =
+        bimap concat (bimap concat id . unzip . catMaybes) $
+        unzip [genStaticVal env v e | (v,e) <- flattenBinds binds, isWanted v]
+
 
     tupDCId = dataConWorkId (tupleDataCon Unboxed 2)
-    decls = [ mallocDecl, topHandlerDecl ]
+    external_decls = [ mkExternalDecl v | v <- nub externals ]
+    defaultDecls = [ mallocDecl ]
 
 defaultTyDecls :: [Coq_type_decl]
 defaultTyDecls =
@@ -63,7 +67,7 @@ returnArgDef :: Coq_definition
 returnArgDef = mkEnterFunDefinition
     LINKAGE_Private
     "returnArg"
-    (runG $ returnFromFunction (ID_Local (Name "clos")))
+    (snd $ runG $ returnFromFunction (ID_Local (Name "clos")))
 
 returnArgIdent :: Coq_ident
 returnArgIdent = ID_Global (Name "returnArg")
@@ -122,7 +126,7 @@ isWanted v | Just (tc,_) <- splitTyConApp_maybe (varType v)
            = False
 isWanted v = True
 
-genStaticVal :: GenEnv -> Var -> CoreExpr -> ([Coq_global], Maybe Coq_definition)
+genStaticVal :: GenEnv -> Var -> CoreExpr -> ([Coq_global], Maybe ([Var], Coq_definition))
 genStaticVal env v rhs
     | idArity v == 0
     , Just dc <- isDataConId_maybe v
@@ -212,15 +216,17 @@ genStaticVal env v rhs =
                       ]
     -- casted_val = SV $ OP_Conversion Bitcast (mkFunClosureTy arity 0) val hsTy
 
-genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> Coq_definition
+genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> ([Var], Coq_definition)
 genTopLvlFunction env v rhs
-    | Just dc <- isDataConWorkId_maybe v = genDataConWorker dc
+    | Just dc <- isDataConWorkId_maybe v = ([], genDataConWorker dc)
 genTopLvlFunction env v rhs =
-    mkHsFunDefinition
-        linkage
-        (funRawId v)
-        [ varRawId p | p <- params ]
-        (runG (genExpr env body >>= returnFromFunction))
+    let (externals, blocks) = runG (genExpr env body >>= returnFromFunction)
+        def = mkHsFunDefinition
+            linkage
+            (funRawId v)
+            [ varRawId p | p <- params ]
+            blocks
+    in (externals, def)
   where
     (params, body) = collectMoreValBinders rhs
     linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
@@ -265,7 +271,7 @@ genDataConWorker :: DataCon -> Coq_definition
 genDataConWorker dc = mkHsFunDefinition linkage
     (funRawId (dataConWorkId dc))
     [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]] $
-    runG $ do
+    snd $ runG $ do
         let (alloc, fill) = allocateDataCon (Name "dc") dc
         alloc
         fill [ ID_Local (Name (paramName n)) | n <- [0..dataConRepArity dc - 1]]
@@ -296,11 +302,26 @@ mallocDecl = Coq_mk_declaration
     Nothing
 
 
-topHandlerDecl :: Coq_declaration
-topHandlerDecl = mkHsFunDeclaration LINKAGE_External (Name "GHCziTopHandler_runMainIO") [Name "main"]
+mkExternalDecl :: Var -> Coq_global
+mkExternalDecl v =
+    Coq_mk_global
+       (varRawId v)
+       hsTy
+       True -- constant
+       Nothing
+       (Just LINKAGE_External)
+       Nothing
+       Nothing
+       Nothing
+       False
+       Nothing
+       False
+       Nothing
+       Nothing
+
 
 -- A code generation monad
-type G a = StateT Int (Writer [Coq_terminator -> Coq_block]) a
+type G = StateT Int (WriterT [Var] (Writer [Coq_terminator -> Coq_block]))
 
 deriving instance Show Coq_raw_id
 deriving instance Show Coq_type_decl
@@ -332,8 +353,10 @@ deriving instance Show Coq_global
 deriving instance Show Coq_metadata
 deriving instance Show Coq_modul
 
-runG :: G () -> [Coq_block]
-runG g = combine $ connect (execWriter (execStateT g 0))
+runG :: G () -> ([Var], [Coq_block])
+runG g =
+    let (decls, mkBlocks) = runWriter (execWriterT (execStateT g 0))
+    in (decls, combine (connect mkBlocks))
   where
     final_term = error "Unterminated last block"
     connect [mkBlock]          = [mkBlock final_term]
@@ -356,10 +379,13 @@ fresh = do
 freshAnon :: G Coq_local_id
 freshAnon = Anon <$> fresh
 
+noteExternalVar :: Var -> G ()
+noteExternalVar v = lift (tell [v])
+
 emitTerm :: Coq_terminator -> G ()
 emitTerm t = do
     blockId <- freshAnon
-    tell [\_ -> Coq_mk_block blockId [] t (IVoid 0)]
+    lift $ lift $ tell [\_ -> Coq_mk_block blockId [] t (IVoid 0)]
 
 emitInstr :: Coq_instr -> G Coq_ident
 emitInstr instr = do
@@ -370,21 +396,21 @@ emitInstr instr = do
 emitNamedInstr :: Coq_local_id -> Coq_instr -> G ()
 emitNamedInstr instrId instr = do
     blockId <- freshAnon
-    tell [\t -> Coq_mk_block blockId [(IId instrId, instr)] t (IVoid 0)]
+    lift $ lift $ tell [\t -> Coq_mk_block blockId [(IId instrId, instr)] t (IVoid 0)]
 
 namedBlock :: Coq_local_id -> G ()
 namedBlock blockId = do
-    tell [\t -> Coq_mk_block blockId [] t (IVoid 0)]
+    lift $ lift $ tell [\t -> Coq_mk_block blockId [] t (IVoid 0)]
 
 namedBr1Block :: Coq_local_id -> Coq_local_id -> G ()
 namedBr1Block blockId toBlockId = do
-    tell [\_ -> Coq_mk_block blockId [] (TERM_Br_1 (TYPE_Label, ID_Local toBlockId)) (IVoid 0)]
+    lift $ lift $ tell [\_ -> Coq_mk_block blockId [] (TERM_Br_1 (TYPE_Label, ID_Local toBlockId)) (IVoid 0)]
 
 namedPhiBlock :: Coq_typ -> Coq_block_id -> [(Coq_ident, Coq_block_id)] -> G Coq_ident
 namedPhiBlock ty blockId pred = do
     tmpId <- freshAnon
     let phi = (IId tmpId, INSTR_Phi ty [ (i, SV (VALUE_Ident (ID_Local l))) | (i,l) <- pred ])
-    tell [\t -> Coq_mk_block blockId [phi] t (IVoid 0)]
+    lift $ lift $ tell [\t -> Coq_mk_block blockId [phi] t (IVoid 0)]
     return (ID_Local tmpId)
 
 ---
@@ -480,7 +506,13 @@ genExpr env e@(Var v) | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc =
     emitInstr $ noop hsTyP (SV (VALUE_Null))
 -}
 
-genExpr env (Var v) | isGlobalId v || v `elemVarSet` env =  do
+genExpr env (Var v) | isGlobalId v && not (v `elemVarSet` env) =  do
+    noteExternalVar v
+    codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
+    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
+    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident (varIdent env v))]
+
+genExpr env (Var v) | v `elemVarSet` env =  do
     -- Should not be necessary once I find out how to cast the global variable to hsTyP
     castedPtr <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
