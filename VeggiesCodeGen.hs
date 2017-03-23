@@ -5,6 +5,7 @@ module VeggiesCodeGen where
 import Data.List
 import Data.Maybe
 import Data.Bifunctor
+import Data.Either
 import Control.Monad.State
 import Control.Monad.Writer
 
@@ -36,20 +37,37 @@ type GenEnv = IdSet
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
 genCode name tycons binds
     = mkCoqModul (moduleNameString name)
-      (globals ++ external_decls)
+      (globals ++ globals2 ++ external_decls)
       defaultTyDecls
       (defaultDecls)
-      (defaultDefs ++ defs)
+      (defaultDefs ++ defs ++ defs2)
   where
-    env = top_level_ids
     top_level_ids = mkVarSet (bindersOfBinds binds)
+
+    env = top_level_ids
+
+    (datacons, real_binds) = partitionEithers
+        [ case isDataConWorkId_maybe v of
+            Just dc -> Left dc
+            Nothing -> Right (v,e)
+        | (v,e) <- flattenBinds binds ]
+
     (globals, (externals, defs)) =
-        bimap concat (bimap concat id . unzip . catMaybes) $
-        unzip [genStaticVal env v e | (v,e) <- flattenBinds binds]
+        bimap concat (bimap (nub . concat) id . unzip . catMaybes) $
+        unzip [genStaticVal env v e | (v,e) <- real_binds ]
 
+    (extra_datacons, real_externals) = partitionEithers
+        [ case isDataConWorkId_maybe v of
+            Just dc | isUnboxedTupleCon dc -> Left dc
+            Nothing -> Right v
+        | v <- externals ]
 
-    tupDCId = dataConWorkId (tupleDataCon Unboxed 2)
-    external_decls = [ mkExternalDecl v | v <- nub externals ]
+    (globals2, ([], defs2)) =
+        bimap concat (bimap (nub . concat) id . unzip . catMaybes) $
+        unzip [genStaticVal env (dataConWorkId dc) (Var (dataConWorkId dc))
+              | dc <- datacons ++ extra_datacons ]
+
+    external_decls = [ mkExternalDecl v | v <- nub real_externals ]
     defaultDecls = [ mallocDecl ]
 
 defaultTyDecls :: [Coq_type_decl]
@@ -505,11 +523,23 @@ genExpr env e
         (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
   where
 
-{-
-genExpr env e@(Var v) | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc =
-    pprTrace "genExpr" (ppr e) $
-    emitInstr $ noop hsTyP (SV (VALUE_Null))
--}
+  --- AAARG  I relly need to fix this
+genExpr env e@(Var v) | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc = do
+    noteExternalVar v
+    castedPtr <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
+    codePtr <- emitInstr $ getElemPtr hsTyP castedPtr [0,0]
+    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
+    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident castedPtr)]
+
+genExpr env (Var v) | v `elemVarSet` env =  do
+    -- Should not be necessary once I find out how to cast the global variable to hsTyP
+    castedPtr <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast (mkFunClosureTy (idArity v) 0) (ident (varIdent env v)) hsTyP))
+    codePtr <- emitInstr $ getElemPtr hsTyP castedPtr [0,0]
+    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
+    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident castedPtr)]
+
 
 genExpr env (Var v) | isGlobalId v && not (v `elemVarSet` env) =  do
     noteExternalVar v
