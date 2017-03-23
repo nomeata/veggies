@@ -16,6 +16,7 @@ addons:
     - happy-1.19.5
     - clang-4.0
     - llvm-4.0
+    - llvm-4.0-dev
 
 before_install:
     - export PATH=$HOME/.cabal/bin:$PATH
@@ -25,8 +26,9 @@ before_install:
     - export PATH=/opt/ghc/8.0.1/bin:$PATH
 
 install:
-    # install ghcjs
     - cabal update
+    - cabal install groom
+    - cabal install llvm-hs
 
 script:
     - ./boot.sh out/
