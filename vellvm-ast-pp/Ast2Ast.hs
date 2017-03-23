@@ -37,7 +37,8 @@ instance Conv Coq_modul Module where
                 map (conv . snd) (m_globals m) ++
                 map (conv . snd) (m_type_decls m) ++
                 map (conv . snd) (m_declarations m) ++
-                map (conv . snd) (m_definitions m)
+                map (conv . snd) (m_definitions m) ++
+                map (conv . snd) (m_aliases m)
            }
 
 instance Conv Coq_param_attr ParameterAttribute
@@ -185,6 +186,26 @@ instance Conv Coq_global Definition where
             g_section
             Nothing -- (Maybe String) comdat
             (maybe 0 fromIntegral g_align)
+
+instance Conv Coq_alias Definition where
+    conv (Coq_mk_alias
+        a_ident        -- global_id;
+        a_typ          -- typ;
+        a_value        -- value;
+        a_linkage      -- option linkage;
+        a_visibility   -- option visibility;
+        a_dll_storage  -- option dll_storage;
+        a_thread_local -- option thread_local_storage;
+        a_unnamed_addr -- bool;
+        ) = GlobalDefinition $ GlobalAlias
+            (conv a_ident)
+            (maybe External conv a_linkage)
+            Default -- Visibility
+            Nothing -- (Maybe StorageClass)
+            Nothing -- (Maybe Model)
+            Nothing -- (Maybe UnnamedAddr)
+            (conv a_typ)
+            (conv a_value (conv a_typ))
 
 
 

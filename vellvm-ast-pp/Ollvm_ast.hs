@@ -806,6 +806,52 @@ g_align g =
   case g of {
    Coq_mk_global _ _ _ _ _ _ _ _ _ _ _ _ g_align0 -> g_align0}
 
+data Coq_alias =
+   Coq_mk_alias Coq_global_id Coq_typ Coq_value (Prelude.Maybe Coq_linkage) 
+ (Prelude.Maybe Coq_visibility) (Prelude.Maybe Coq_dll_storage) (Prelude.Maybe
+                                                                Coq_thread_local_storage) 
+ Prelude.Bool
+
+a_ident :: Coq_alias -> Coq_global_id
+a_ident a =
+  case a of {
+   Coq_mk_alias a_ident0 _ _ _ _ _ _ _ -> a_ident0}
+
+a_typ :: Coq_alias -> Coq_typ
+a_typ a =
+  case a of {
+   Coq_mk_alias _ a_typ0 _ _ _ _ _ _ -> a_typ0}
+
+a_value :: Coq_alias -> Coq_value
+a_value a =
+  case a of {
+   Coq_mk_alias _ _ a_value0 _ _ _ _ _ -> a_value0}
+
+a_linkage :: Coq_alias -> Prelude.Maybe Coq_linkage
+a_linkage a =
+  case a of {
+   Coq_mk_alias _ _ _ a_linkage0 _ _ _ _ -> a_linkage0}
+
+a_visibility :: Coq_alias -> Prelude.Maybe Coq_visibility
+a_visibility a =
+  case a of {
+   Coq_mk_alias _ _ _ _ a_visibility0 _ _ _ -> a_visibility0}
+
+a_dll_storage :: Coq_alias -> Prelude.Maybe Coq_dll_storage
+a_dll_storage a =
+  case a of {
+   Coq_mk_alias _ _ _ _ _ a_dll_storage0 _ _ -> a_dll_storage0}
+
+a_thread_local :: Coq_alias -> Prelude.Maybe Coq_thread_local_storage
+a_thread_local a =
+  case a of {
+   Coq_mk_alias _ _ _ _ _ _ a_thread_local0 _ -> a_thread_local0}
+
+a_unnamed_addr :: Coq_alias -> Prelude.Bool
+a_unnamed_addr a =
+  case a of {
+   Coq_mk_alias _ _ _ _ _ _ _ a_unnamed_addr0 -> a_unnamed_addr0}
+
 data Coq_declaration =
    Coq_mk_declaration Coq_function_id Coq_typ ((,) ([] Coq_param_attr)
                                               ([] ([] Coq_param_attr))) 
@@ -994,42 +1040,50 @@ data Coq_modul =
  ([] ((,) Prelude.String Coq_global)) ([] ((,) Prelude.String Coq_type_decl)) 
  ([] ((,) Prelude.String Coq_declaration)) ([]
                                            ((,) Prelude.String
-                                           Coq_definition))
+                                           Coq_definition)) ([]
+                                                            ((,)
+                                                            Prelude.String
+                                                            Coq_alias))
 
 m_name :: Coq_modul -> Prelude.String
 m_name m =
   case m of {
-   Coq_mk_modul m_name0 _ _ _ _ _ _ -> m_name0}
+   Coq_mk_modul m_name0 _ _ _ _ _ _ _ -> m_name0}
 
 m_target :: Coq_modul -> Coq_toplevel_entity
 m_target m =
   case m of {
-   Coq_mk_modul _ m_target0 _ _ _ _ _ -> m_target0}
+   Coq_mk_modul _ m_target0 _ _ _ _ _ _ -> m_target0}
 
 m_datalayout :: Coq_modul -> Coq_toplevel_entity
 m_datalayout m =
   case m of {
-   Coq_mk_modul _ _ m_datalayout0 _ _ _ _ -> m_datalayout0}
+   Coq_mk_modul _ _ m_datalayout0 _ _ _ _ _ -> m_datalayout0}
 
 m_globals :: Coq_modul -> [] ((,) Prelude.String Coq_global)
 m_globals m =
   case m of {
-   Coq_mk_modul _ _ _ m_globals0 _ _ _ -> m_globals0}
+   Coq_mk_modul _ _ _ m_globals0 _ _ _ _ -> m_globals0}
 
 m_type_decls :: Coq_modul -> [] ((,) Prelude.String Coq_type_decl)
 m_type_decls m =
   case m of {
-   Coq_mk_modul _ _ _ _ m_type_decls0 _ _ -> m_type_decls0}
+   Coq_mk_modul _ _ _ _ m_type_decls0 _ _ _ -> m_type_decls0}
 
 m_declarations :: Coq_modul -> [] ((,) Prelude.String Coq_declaration)
 m_declarations m =
   case m of {
-   Coq_mk_modul _ _ _ _ _ m_declarations0 _ -> m_declarations0}
+   Coq_mk_modul _ _ _ _ _ m_declarations0 _ _ -> m_declarations0}
 
 m_definitions :: Coq_modul -> [] ((,) Prelude.String Coq_definition)
 m_definitions m =
   case m of {
-   Coq_mk_modul _ _ _ _ _ _ m_definitions0 -> m_definitions0}
+   Coq_mk_modul _ _ _ _ _ _ m_definitions0 _ -> m_definitions0}
+
+m_aliases :: Coq_modul -> [] ((,) Prelude.String Coq_alias)
+m_aliases m =
+  case m of {
+   Coq_mk_modul _ _ _ _ _ _ _ m_aliases0 -> m_aliases0}
 
 type Coq_toplevel_entities = [] Coq_toplevel_entity
 

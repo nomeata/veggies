@@ -36,11 +36,14 @@ type GenEnv = IdSet
 
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
 genCode name tycons binds
-    = mkCoqModul (moduleNameString name)
-      (globals ++ globals2 ++ external_decls)
-      defaultTyDecls
-      (defaultDecls)
-      (defaultDefs ++ defs ++ defs2)
+    = mkCoqModul (moduleNameString name) $ concat
+        [ globals
+        , globals2
+        , external_decls
+        , defaultTyDecls
+        , defaultDecls
+        , defaultDefs
+        ]
   where
     top_level_ids = mkVarSet (bindersOfBinds binds)
 
@@ -52,8 +55,8 @@ genCode name tycons binds
             Nothing -> Right (v,e)
         | (v,e) <- flattenBinds binds ]
 
-    (globals, (externals, defs)) =
-        bimap concat (bimap (nub . concat) id . unzip . catMaybes) $
+    (globals, externals) =
+        bimap concat (nub . concat) $
         unzip [genStaticVal env v e | (v,e) <- real_binds ]
 
     (extra_datacons, real_externals) = partitionEithers
@@ -62,24 +65,24 @@ genCode name tycons binds
             Nothing -> Right v
         | v <- externals ]
 
-    (globals2, ([], defs2)) =
-        bimap concat (bimap (nub . concat) id . unzip . catMaybes) $
-        unzip [genStaticVal env (dataConWorkId dc) (Var (dataConWorkId dc))
+    (globals2, []) =
+        bimap concat concat $
+        unzip [ genStaticVal env (dataConWorkId dc) (Var (dataConWorkId dc))
               | dc <- datacons ++ extra_datacons ]
 
     external_decls = [ mkExternalDecl v | v <- nub real_externals ]
     defaultDecls = [ mallocDecl ]
 
-defaultTyDecls :: [Coq_type_decl]
+defaultTyDecls :: [TopLevelThing]
 defaultTyDecls =
-    [ Coq_mk_type_decl (Name "hs")    mkClosureTy
-    , Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
-    , Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
+    [ TLTyDef $ Coq_mk_type_decl (Name "hs")    mkClosureTy
+    , TLTyDef $ Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
+    , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
     ]
 
-defaultDefs :: [Coq_definition]
+defaultDefs :: [TopLevelThing]
 defaultDefs =
-    [ returnArgDef
+    [ TLDef $ returnArgDef
     ]
 
 returnArgDef :: Coq_definition
@@ -138,7 +141,7 @@ mkFunClosureTy n m =
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
 
-genStaticVal :: GenEnv -> Var -> CoreExpr -> ([Coq_global], Maybe ([Var], Coq_definition))
+genStaticVal :: GenEnv -> Var -> CoreExpr -> ([TopLevelThing], [Var])
 genStaticVal env v rhs
     | idArity v == 0
     , Just dc <- isDataConId_maybe v
@@ -147,7 +150,7 @@ genStaticVal env v rhs
                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
                                , (envTy 0 , SV (VALUE_Array []))
                                ]
-    in ( [ Coq_mk_global
+    in ( [ TLGlobal $ Coq_mk_global
                (varRawId v)
                (mkDataConTy 0) --hsTyP
                True -- constant
@@ -162,7 +165,7 @@ genStaticVal env v rhs
                Nothing
                Nothing
          ]
-       , Nothing )
+       , [] )
 genStaticVal env v rhs
     | (Var f, args) <- collectArgs rhs
     , Just dc <- isDataConId_maybe f
@@ -184,7 +187,7 @@ genStaticVal env v rhs
                                ]
     in (if length args_idents == dataConRepArity dc then id
            else pprTrace "genStaticVal arity" (ppr v <+> ppr arity <+> ppr dc))
-       ( [ Coq_mk_global
+       ( [ TLGlobal $ Coq_mk_global
              (varRawId v)
              (mkDataConTy arity) --hsTyP
              True -- constant
@@ -199,27 +202,28 @@ genStaticVal env v rhs
              Nothing
              Nothing
           ]
-        , Nothing)
+        , [])
   where
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
 
 genStaticVal env v rhs =
-    ( [ Coq_mk_global
-          (varRawId v)
-          (mkFunClosureTy arity 0) --hsTyP
-          True -- constant
-          (Just val)
-          (Just linkage)
-          Nothing
-          Nothing
-          Nothing
-          False
-          Nothing
-          False
-          Nothing
-          Nothing
-      ]
-    , Just $ genTopLvlFunction env v rhs)
+    let (def, externals) = genTopLvlFunction env v rhs
+    in ( [ TLGlobal $ Coq_mk_global
+            (varRawId v)
+            (mkFunClosureTy arity 0) --hsTyP
+            True -- constant
+            (Just val)
+            (Just linkage)
+            Nothing
+            Nothing
+            Nothing
+            False
+            Nothing
+            False
+            Nothing
+            Nothing
+         , def
+         ], externals)
   where
     linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
             = LINKAGE_Private
@@ -234,17 +238,17 @@ genStaticVal env v rhs =
                       ]
     -- casted_val = SV $ OP_Conversion Bitcast (mkFunClosureTy arity 0) val hsTy
 
-genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> ([Var], Coq_definition)
+genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> (TopLevelThing, [Var])
 genTopLvlFunction env v rhs
-    | Just dc <- isDataConWorkId_maybe v = ([], genDataConWorker dc)
+    | Just dc <- isDataConWorkId_maybe v = (genDataConWorker dc, [])
 genTopLvlFunction env v rhs =
     let (externals, blocks) = runG (genExpr env body >>= returnFromFunction)
-        def = mkHsFunDefinition
+        def = TLDef $ mkHsFunDefinition
             linkage
             (funRawId v)
             [ varRawId p | p <- params ]
             blocks
-    in (externals, def)
+    in (def, externals)
   where
     (params, body) = collectMoreValBinders rhs
     linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
@@ -285,8 +289,8 @@ allocateDataCon dcName dc = (alloc, fill)
     thisDataConTy = mkDataConTy (dataConRepArity dc)
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
-genDataConWorker :: DataCon -> Coq_definition
-genDataConWorker dc = mkHsFunDefinition linkage
+genDataConWorker :: DataCon -> TopLevelThing
+genDataConWorker dc = TLDef $ mkHsFunDefinition linkage
     (funRawId (dataConWorkId dc))
     [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]] $
     snd $ runG $ do
@@ -305,8 +309,8 @@ genDataConWorker dc = mkHsFunDefinition linkage
 mallocRetTyP = TYPE_Pointer (TYPE_I 8)
 mallocTy = TYPE_Function mallocRetTyP [TYPE_I 64]
 
-mallocDecl ::  Coq_declaration
-mallocDecl = Coq_mk_declaration
+mallocDecl :: TopLevelThing
+mallocDecl = TLDecl $ Coq_mk_declaration
     (Name "malloc")
     mallocTy
     ([],[[]])
@@ -320,9 +324,9 @@ mallocDecl = Coq_mk_declaration
     Nothing
 
 
-mkExternalDecl :: Var -> Coq_global
+mkExternalDecl :: Var -> TopLevelThing
 mkExternalDecl v =
-    Coq_mk_global
+    TLGlobal $ Coq_mk_global
        (varRawId v)
        hsTy
        True -- constant
@@ -341,6 +345,7 @@ mkExternalDecl v =
 -- A code generation monad
 type G = StateT Int (WriterT [Var] (Writer [Coq_terminator -> Coq_block]))
 
+deriving instance Show Coq_alias
 deriving instance Show Coq_raw_id
 deriving instance Show Coq_type_decl
 deriving instance Show Coq_typ
@@ -743,14 +748,20 @@ caseAltJoinRawId n = Name (codeNameStr (getName n) ++ "_br_join")
 
 
 
+data TopLevelThing
+    = TLAlias  Coq_alias
+    | TLGlobal Coq_global
+    | TLTyDef  Coq_type_decl
+    | TLDecl   Coq_declaration
+    | TLDef    Coq_definition
 
-
-mkCoqModul :: String -> [Coq_global] -> [Coq_type_decl] -> [Coq_declaration] -> [Coq_definition] -> Coq_modul
-mkCoqModul name globals tydecls declarations definitions
+mkCoqModul :: String -> [TopLevelThing] -> Coq_modul
+mkCoqModul name top_level_things
     = Coq_mk_modul name
         (TLE_Target "x86_64-pc-linux")
         (TLE_Source_filename "no data layout here")
-        (map ("",) globals)
-        (map ("",) tydecls)
-        (map ("",) declarations)
-        (map ("",) definitions)
+        (map ("",) [ x | TLGlobal x <- top_level_things ])
+        (map ("",) [ x | TLTyDef x  <- top_level_things ])
+        (map ("",) [ x | TLDecl x   <- top_level_things ])
+        (map ("",) [ x | TLDef x    <- top_level_things ])
+        (map ("",) [ x | TLAlias x  <- top_level_things ])
