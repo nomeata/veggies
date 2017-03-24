@@ -27,13 +27,17 @@ import PrelNames
 import TysWiredIn
 import BasicTypes
 import VarSet
+import VarEnv
 import Literal
 
 import Ollvm_ast
 
 import Debug.Trace
 
-type GenEnv = IdSet
+data GenEnv = GenEnv
+    { topLvls :: IdSet
+    , topLvlArities :: VarEnv Arity
+    }
 
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
 genCode name tycons binds
@@ -44,9 +48,7 @@ genCode name tycons binds
         , defaultDecls
         ]
   where
-    top_level_ids = mkVarSet (bindersOfBinds binds)
-
-    env = top_level_ids
+    env = mkGenEnv (flattenBinds binds)
 
     (globals, externals) =
         bimap concat (nub . concat) $
@@ -57,6 +59,21 @@ genCode name tycons binds
         [ mallocDecl
         , returnArgDecl
         ]
+
+mkGenEnv :: [(Id, CoreExpr)] -> GenEnv
+mkGenEnv pairs =
+    GenEnv { topLvls = mkVarSet (map fst pairs)
+           , topLvlArities = mkVarEnv
+                [ (v, length (fst (collectMoreValBinders e))) | (v,e) <- pairs ]
+           }
+
+getIdArity :: GenEnv -> Id -> Arity
+getIdArity env v | isExternalName (idName v)                    = idArity v
+                 | Just a <- lookupVarEnv (topLvlArities env) v = a
+                 | otherwise                                    = idArity v
+
+isTopLvl :: GenEnv -> Id -> Bool
+isTopLvl env v = v `elemVarSet` topLvls env
 
 defaultTyDecls :: [TopLevelThing]
 defaultTyDecls =
@@ -122,7 +139,7 @@ dataConTyP = TYPE_Pointer dataConTy
 
 genStaticVal :: GenEnv -> Var -> CoreExpr -> ([TopLevelThing], [Var])
 genStaticVal env v rhs
-    | idArity v == 0
+    | getIdArity env v == 0
     , Just dc <- isDataConId_maybe v
     =
     let val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
@@ -164,11 +181,11 @@ genStaticVal env v rhs
                       | e <- val_args , Just v <- return $ getStaticArg e]
 
         getStaticArg :: CoreExpr -> Maybe Coq_value
-        getStaticArg (Var v) = Just $ cast (idArity v) (ident (varIdent env v))
+        getStaticArg (Var v) = Just $ cast (getIdArity env v) (ident (varIdent env v))
         getStaticArg (Lit _) = Just $ SV (VALUE_Null)
         getStaticArg _ = Nothing
 
-        externals = [ v | Var v <- val_args, (isGlobalId v && not (v `elemVarSet` env)) ]
+        externals = [ v | Var v <- val_args, (isGlobalId v && not (isTopLvl env v)) ]
 
         arity = length args_idents
         val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
@@ -176,7 +193,7 @@ genStaticVal env v rhs
                                , (envTy arity , SV (VALUE_Array args_idents))
                                ]
     in (if length args_idents == dataConRepArity dc then id
-           else pprTrace "genStaticVal arity" (ppr v <+> ppr arity <+> ppr dc))
+           else pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr arity))
        ( [ TLGlobal $ Coq_mk_global
              (varRawIdTmp v)
              (mkDataConTy arity) --hsTyP
@@ -233,7 +250,7 @@ genStaticVal env v rhs =
          , def
          ], externals)
   where
-    arity = idArity v
+    arity = getIdArity env v
     val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
                            , (TYPE_Pointer (hsFunTy arity 0) , ident (funIdent env v))
 
@@ -245,7 +262,11 @@ genStaticVal env v rhs =
 genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> (TopLevelThing, [Var])
 genTopLvlFunction env v rhs
     | Just dc <- isDataConWorkId_maybe v = (genDataConWorker dc, [])
-genTopLvlFunction env v rhs =
+genTopLvlFunction env v rhs
+    | length params /= getIdArity env v
+    = pprPanic "genTopLvlFunction" (ppr v <+> ppr rhs <+> ppr (getIdArity env v))
+    | otherwise
+    =
     let (externals, blocks) = runG (genExpr env body >>= returnFromFunction)
         def = TLDef $ mkHsFunDefinition
             LINKAGE_External
@@ -460,6 +481,9 @@ genExpr env (Case scrut b _ [(DEFAULT, _, body)]) = do
     emitNamedInstr (varRawId b) $ noop hsTyP (ident scrut_eval)
     genExpr env body
 
+genExpr env (Case scrut _ _ []) = do
+    genExpr env scrut
+
 genExpr env (Case scrut b _ alts) = do
     scrut_eval <- genExpr env scrut
     emitNamedInstr (varRawId b) $ noop hsTyP (ident scrut_eval)
@@ -548,7 +572,7 @@ genExpr env e
   where
 
 genExpr env (Var v) = do
-    when (isGlobalId v && not (v `elemVarSet` env)) $ noteExternalVar v
+    when (isGlobalId v && not (isTopLvl env v)) $ noteExternalVar v
     codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
     code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
     emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident (varIdent env v))]
@@ -565,7 +589,7 @@ genArg :: GenEnv -> CoreArg -> G Coq_ident
 genArg env (Cast e _) = genArg env e
 genArg env (App e a) | isTyCoArg a = genArg env e
 genArg env (Var v) = do
-    when (isGlobalId v && not (v `elemVarSet` env)) $ noteExternalVar v
+    when (isGlobalId v && not (isTopLvl env v )) $ noteExternalVar v
     return $ varIdent env v
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
@@ -675,7 +699,7 @@ codeNameStr n  =
 
 funIdent :: GenEnv -> Id -> Coq_ident
 funIdent env v
-    | isGlobalId v || v `elemVarSet` env
+    | isGlobalId v || isTopLvl env v
     = ID_Global (funRawId v)
     | otherwise
     = ID_Local (funRawId v)
@@ -684,7 +708,7 @@ funRawId v = Name (codeNameStr (getName v) ++ "_fun")
 
 varIdent :: GenEnv -> Id -> Coq_ident
 varIdent env v
-    | isGlobalId v || v `elemVarSet` env
+    | isGlobalId v || isTopLvl env v
     = ID_Global (varRawId v)
     | otherwise
     = ID_Local (varRawId v)
