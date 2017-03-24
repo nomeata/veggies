@@ -11,6 +11,7 @@ import Control.Monad.Writer
 
 import Var
 import Id
+import MkId
 import Module
 import Type
 import TyCon
@@ -38,40 +39,24 @@ genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
 genCode name tycons binds
     = mkCoqModul (moduleNameString name) $ concat
         [ globals
-        , globals2
         , external_decls
         , defaultTyDecls
         , defaultDecls
-        , defaultDefs
         ]
   where
     top_level_ids = mkVarSet (bindersOfBinds binds)
 
     env = top_level_ids
 
-    (datacons, real_binds) = partitionEithers
-        [ case isDataConWorkId_maybe v of
-            Just dc -> Left dc
-            Nothing -> Right (v,e)
-        | (v,e) <- flattenBinds binds ]
-
     (globals, externals) =
         bimap concat (nub . concat) $
-        unzip [genStaticVal env v e | (v,e) <- real_binds ]
+        unzip [genStaticVal env v e | (v,e) <- flattenBinds binds ]
 
-    (extra_datacons, real_externals) = partitionEithers
-        [ case isDataConWorkId_maybe v of
-            Just dc | isUnboxedTupleCon dc -> Left dc
-            _ -> Right v
-        | v <- externals ]
-
-    (globals2, []) =
-        bimap concat concat $
-        unzip [ genStaticVal env (dataConWorkId dc) (Var (dataConWorkId dc))
-              | dc <- datacons ++ extra_datacons ]
-
-    external_decls = [ mkExternalDecl v | v <- nub real_externals ]
-    defaultDecls = [ mallocDecl ]
+    external_decls = [ mkExternalDecl v | v <- externals ]
+    defaultDecls =
+        [ mallocDecl
+        , returnArgDecl
+        ]
 
 defaultTyDecls :: [TopLevelThing]
 defaultTyDecls =
@@ -80,19 +65,13 @@ defaultTyDecls =
     , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
     ]
 
-defaultDefs :: [TopLevelThing]
-defaultDefs =
-    [ TLDef $ returnArgDef
-    ]
-
-returnArgDef :: Coq_definition
-returnArgDef = mkEnterFunDefinition
-    LINKAGE_Private
-    "returnArg"
-    (snd $ runG $ returnFromFunction (ID_Local (Name "clos")))
+returnArgDecl :: TopLevelThing
+returnArgDecl =  TLDecl $ mkEnterFunDeclaration
+    LINKAGE_External
+    "rts_returnArg"
 
 returnArgIdent :: Coq_ident
-returnArgIdent = ID_Global (Name "returnArg")
+returnArgIdent = ID_Global (Name "rts_returnArg")
 
 mkClosureTy :: Coq_typ
 mkClosureTy = TYPE_Struct [ enterFunTyP ]
@@ -244,7 +223,7 @@ genStaticVal env v rhs =
                (varRawId v)
                hsTyP
                (SV (OP_Conversion Bitcast (mkFunClosureTy arity 0) (ident (ID_Global (varRawIdTmp v))) hsTyP))
-               (Just linkage)
+               (Just LINKAGE_External)
                Nothing
                Nothing
                Nothing
@@ -252,10 +231,6 @@ genStaticVal env v rhs =
          , def
          ], externals)
   where
-    linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
-            = LINKAGE_Private
-            | otherwise
-            = LINKAGE_External
     arity = idArity v
     val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
                            , (TYPE_Pointer (hsFunTy arity 0) , ident (funIdent env v))
@@ -271,17 +246,13 @@ genTopLvlFunction env v rhs
 genTopLvlFunction env v rhs =
     let (externals, blocks) = runG (genExpr env body >>= returnFromFunction)
         def = TLDef $ mkHsFunDefinition
-            linkage
+            LINKAGE_External
             (funRawId v)
             [ varRawId p | p <- params ]
             blocks
     in (def, externals)
   where
     (params, body) = collectMoreValBinders rhs
-    linkage | Just dc <- isDataConId_maybe v, isUnboxedTupleCon dc
-            = LINKAGE_Private
-            | otherwise
-            = LINKAGE_External
 
 genMalloc :: Coq_typ -> G Coq_ident
 genMalloc t = do
@@ -534,6 +505,25 @@ genExpr env (Let binds body) = do
   where
     pairs = flattenBinds [binds]
 
+ -- Saturated data con application
+ -- We could just use the normal code for function calls, but
+ -- unboxed tuples do not actually exist as global names, so we
+ -- have to do them here on the fly. So just do all of them here.
+genExpr env e
+    | (Var v, args) <- collectArgs e
+    , Just dc <- isDataConWorkId_maybe v
+    , let args' = filter isValArg args
+    , not (null args')
+    , length args' == dataConRepArity dc
+    = do
+
+    arg_locals <- mapM (genArg env) args'
+    dc_local <- freshAnon
+    let (alloc, fill) = allocateDataCon dc_local dc
+    alloc
+    fill arg_locals
+    return (ID_Local dc_local)
+
 genExpr env e
     | (f, args) <- collectArgs e
     , let args' = filter isValArg args
@@ -560,6 +550,10 @@ genExpr env (Var v) = do
     codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
     code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
     emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident (varIdent env v))]
+
+genExpr env (Coercion _) = do
+    noteExternalVar coercionTokenId
+    return (varIdent env coercionTokenId)
 
 genExpr env e =
     pprTrace "genExpr" (ppr e) $

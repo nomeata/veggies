@@ -53,6 +53,11 @@ define i64 @main() {   ; i32()*
   ret i64 %tag
 }
 
-; Named metadata
-!0 = !{i32 42, null, !"string"}
-!foo = !{!0}
+; some embedded things
+
+@GHCziPrim_coercionTokenzh = constant %hs { %hs* (%hs*)* @rts_returnArg }
+
+define %hs* @rts_returnArg(%hs* %clos) {
+  ret %hs* %clos
+}
+
