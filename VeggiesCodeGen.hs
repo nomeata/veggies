@@ -174,26 +174,20 @@ genStaticVal env v rhs
 genStaticVal env v rhs
     | (Var f, args) <- collectArgs rhs
     , Just dc <- isDataConId_maybe f
-    , let val_args = filter isValArg args
+    , let val_args = mapMaybe getStaticArg args
     , not (null val_args)
     =
-    let args_idents = [ (hsTyP, v)
-                      | e <- val_args , Just v <- return $ getStaticArg e]
+    let args_idents = [ (hsTyP, genStaticArg e) | e <- val_args ]
 
-        getStaticArg :: CoreExpr -> Maybe Coq_value
-        getStaticArg (Var v) = Just $ cast (getIdArity env v) (ident (varIdent env v))
-        getStaticArg (Lit _) = Just $ SV (VALUE_Null)
-        getStaticArg _ = Nothing
-
-        externals = [ v | Var v <- val_args, (isGlobalId v && not (isTopLvl env v)) ]
+        externals = [ v | Var v <- val_args, isGlobalId v && not (isTopLvl env v) ]
 
         arity = length args_idents
         val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
                                , (envTy arity , SV (VALUE_Array args_idents))
                                ]
-    in (if length args_idents == dataConRepArity dc then id
-           else pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr arity))
+    in (if arity == dataConRepArity dc then id
+           else pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr arity))
        ( [ TLGlobal $ Coq_mk_global
              (varRawIdTmp v)
              (mkDataConTy arity) --hsTyP
@@ -221,6 +215,19 @@ genStaticVal env v rhs
         , externals)
   where
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
+
+    getStaticArg :: CoreExpr -> Maybe CoreExpr
+    getStaticArg (Cast e _)              = getStaticArg e
+    getStaticArg (App e a) | isTyCoArg a = getStaticArg e
+    getStaticArg (Var v)                 = Just (Var v)
+    getStaticArg (Lit l)                 = Just (Lit l)
+    getStaticArg _                       = Nothing
+
+    genStaticArg :: CoreExpr -> Coq_value
+    genStaticArg (Var v) = cast (getIdArity env v) (ident (varIdent env v))
+    genStaticArg (Lit l) = pprTrace "getStaticArg" (ppr l) $
+                           SV (VALUE_Null)
+    genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
 genStaticVal env v rhs =
     let (def, externals) = genTopLvlFunction env v rhs
