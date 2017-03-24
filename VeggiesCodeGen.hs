@@ -166,7 +166,9 @@ genStaticVal env v rhs
         getStaticArg :: CoreExpr -> Maybe Coq_value
         getStaticArg (Var v) = Just $ cast (idArity v) (ident (varIdent env v))
         getStaticArg (Lit _) = Just $ SV (VALUE_Null)
-        genStaticVal _ = Nothing
+        getStaticArg _ = Nothing
+
+        externals = [ v | Var v <- val_args, (isGlobalId v && not (v `elemVarSet` env)) ]
 
         arity = length args_idents
         val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
@@ -199,7 +201,7 @@ genStaticVal env v rhs
                Nothing
                False
          ]
-        , [])
+        , externals)
   where
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
 
