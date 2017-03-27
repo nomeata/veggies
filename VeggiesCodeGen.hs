@@ -327,7 +327,7 @@ genDataConWorker dc = TLDef $ mkHsFunDefinition linkage
         fill [ ID_Local (Name (paramName n)) | n <- [0..dataConRepArity dc - 1]]
         returnFromFunction (ID_Local (Name "dc"))
   where
-    linkage | isUnboxedTupleCon dc
+    linkage | isUnboxedTupleCon dc -- || isUnboxedSumCon dc -- see Id.hasNoBinding
             = LINKAGE_Private
             | otherwise
             = LINKAGE_External
