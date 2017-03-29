@@ -698,6 +698,10 @@ genExpr env (Coercion _) = do
 genExpr env (Lit (MachInt l)) = do
     liftG $ genIntegerLit (fromIntegral l)
 
+genExpr env (Lam {}) =
+    pprTrace "genExpr" (text "lambda") $
+    emitInstr $ noop hsTyP (SV (VALUE_Null))
+
 genExpr env e =
     pprTrace "genExpr" (ppr e) $
     emitInstr $ noop hsTyP (SV (VALUE_Null))
