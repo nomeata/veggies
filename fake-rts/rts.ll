@@ -10,9 +10,18 @@ target triple = "x86_64-pc-linux-gnu"
 @.str4 = private unnamed_addr constant [15 x i8] c"evaled result\0A\00"
 @.str5 = private unnamed_addr constant [10 x i8] c"all done\0A\00"
 
+@state_token_str = private unnamed_addr constant [21 x i8] c"entered state token\0A\00"
+
 ; External declaration of the puts function
 declare i32 @puts(i8* nocapture) nounwind
-declare extern_weak %hs* @ZCMain_main_fun()
+declare extern_weak %hs* @ZCMain_main_fun([0 x %hs*]* %clos, %hs* %eta_B1)
+
+@state_token = private constant %hs { %hs*(%hs*)* @state_token_fun }
+define private %hs* @state_token_fun(%hs* %clos) {
+  %cast1 = getelementptr [21 x i8], [21 x i8]* @state_token_str, i64 0, i64 0
+  call i32 @puts(i8* %cast1)
+  ret %hs* null
+}
 
 
 ; Definition of main function
@@ -23,7 +32,7 @@ define i64 @main() {   ; i32()*
   ; Call puts function to write out the string to stdout.
   call i32 @puts(i8* %cast1)
 
-  %ret = call %hs* @ZCMain_main_fun()
+  %ret = call %hs* @ZCMain_main_fun([0 x %hs*]* null, %hs* @state_token)
 
   %cast2 = getelementptr [14 x i8], [14 x i8]* @.str2, i64 0, i64 0
   call i32 @puts(i8* %cast2)

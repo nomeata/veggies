@@ -13,12 +13,12 @@ pred Z = Z
 pred (S a) = a
 {-# NOINLINE pred #-}
 
-plus Z     !b = b
-plus (S a) !b = let r = plus a b in r `seq` S r
+plus Z     b = b
+plus (S a) b = S (plus a b)
 {-# NOINLINE plus #-}
 
-mul Z     !b = Z
-mul (S a) !b = let r = mul a b in r `seq` plus b r
+mul Z     b = Z
+mul (S a) b = plus b (mul a b)
 {-# NOINLINE mul #-}
 
 fac Z     = S Z

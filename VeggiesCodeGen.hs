@@ -86,7 +86,7 @@ defaultTyDecls =
 returnArgDecl :: TopLevelThing
 returnArgDecl =  TLDecl $ mkEnterFunDeclaration
     LINKAGE_External
-    "rts_returnArg"
+    (Name "rts_returnArg")
 
 returnArgIdent :: Coq_ident
 returnArgIdent = ID_Global (Name "rts_returnArg")
@@ -227,6 +227,7 @@ genStaticVal env v rhs
                            SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
+-- TODO: Top-level thunks are different!
 genStaticVal env v rhs = do
     genTopLvlFunction env v rhs
     emitTL $ TLGlobal $ Coq_mk_global
@@ -423,14 +424,17 @@ runLG lg = combine . connect <$> evalStateT (execWriterT lg) 0
     combine (b:bs) = b : combine bs
     combine [] = []
 
+liftG :: G a -> LG a
+liftG = lift . lift
+
 freshGlobal :: LG Coq_local_id
-freshGlobal = fmap Anon $ lift $ lift $ lift $ lift $ state (id &&& (+1))
+freshGlobal = fmap Anon $ liftG $ lift $ lift $ state (id &&& (+1))
 
 freshLocal :: LG Coq_local_id
 freshLocal = fmap Anon $ lift $ state (id &&& (+1))
 
 noteExternalVar :: Var -> LG ()
-noteExternalVar v = lift $ lift $ lift $ tell [v]
+noteExternalVar v = liftG $ lift $ tell [v]
 
 emitTL :: TopLevelThing -> G ()
 emitTL tlt = tell [tlt]
@@ -613,22 +617,43 @@ genLetBind env v e
             fill arg_locals
       in (alloc, fill')
 
-genLetBind env v e = (alloc, fill)
+genLetBind env v rhs = (alloc, fill)
   where
     alloc = do
         thunkRawPtr <- genMalloc thisThunkTyP
         emitNamedInstr (varRawId v) $
             INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident thunkRawPtr) hsTyP))
 
+        liftG $ genThunkCode
+
     fill = do
         castedPtr <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (varIdent env v)) thisThunkTyP))
-        -- TODO: Pointer to code function here
+
+        p <- emitInstr $ getElemPtr thisThunkTyP castedPtr [0,0]
+        emitInstr $ INSTR_Store False (enterFunTyP, ident p) (enterFunTyP, ident (funIdent env v)) Nothing
+
         forM_ (zip [0..] fvs) $ \(n,fv) -> do
             p <- emitInstr $ getElemPtr thisThunkTyP castedPtr [0,1,n]
-            emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident (varIdent env v)) Nothing
+            emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident (varIdent env fv)) Nothing
 
-    fvs = exprsFreeVarsList [e]
+    genThunkCode = do
+      blocks <- runLG $ do
+        -- load free variables
+        castedClosPtr <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) thisThunkTyP))
+        forM_ (zip [0..] fvs) $ \(n,fv) -> do
+            p <- emitInstr $ getElemPtr thisThunkTyP castedClosPtr [0,1,n]
+            emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
+        -- evaluate body
+        res <- genExpr env rhs
+        returnFromFunction res
+      emitTL $ TLDef $ mkEnterFunDefinition
+            LINKAGE_Internal
+            (funRawId v)
+            blocks
+
+    fvs = exprsFreeVarsList [rhs]
     thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
 
 
@@ -656,7 +681,7 @@ dummyBody = [ Coq_mk_block (Anon 0)
 mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> [Coq_block] -> Coq_definition
 mkHsFunDefinition linkage n param_names blocks = Coq_mk_definition
     (mkHsFunDeclaration linkage n param_names)
-    (Name "clos" :  param_names)
+    (closRawId :  param_names)
     blocks
 
 mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Coq_declaration
@@ -673,15 +698,15 @@ mkHsFunDeclaration linkage n param_names = Coq_mk_declaration
     Nothing
     Nothing
 
-mkEnterFunDefinition :: Coq_linkage -> String -> [Coq_block] -> Coq_definition
+mkEnterFunDefinition :: Coq_linkage -> Coq_global_id -> [Coq_block] -> Coq_definition
 mkEnterFunDefinition linkage n blocks = Coq_mk_definition
     (mkEnterFunDeclaration linkage n)
-    [Name "clos"]
+    [closRawId]
     blocks
 
-mkEnterFunDeclaration :: Coq_linkage -> String -> Coq_declaration
+mkEnterFunDeclaration :: Coq_linkage -> Coq_global_id -> Coq_declaration
 mkEnterFunDeclaration linkage n = Coq_mk_declaration
-    (Name n)
+    n
     enterFunTy
     ([],[[]])
     (Just linkage)
@@ -706,12 +731,14 @@ codeNameStr n  =
     , show (nameUnique n)
     ]
 
+
+closIdent :: Coq_ident
+closIdent = ID_Local closRawId
+closRawId :: Coq_raw_id
+closRawId = Name "clos"
+
 funIdent :: GenEnv -> Id -> Coq_ident
-funIdent env v
-    | isGlobalId v || isTopLvl env v
-    = ID_Global (funRawId v)
-    | otherwise
-    = ID_Local (funRawId v)
+funIdent env v = ID_Global (funRawId v)
 funRawId :: Id ->  Coq_raw_id
 funRawId v = Name (codeNameStr (getName v) ++ "_fun")
 
