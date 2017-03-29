@@ -78,6 +78,7 @@ declare i8* @malloc(i64)
 
 @GHCziPrim_zpzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_zpzh_fun, i64 2, [0 x %hs*] zeroinitializer }
 @GHCziPrim_zpzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_zpzh_tmp to %hs*)
+@GHCziPrim_addWordzh = alias %hs, %hs* @GHCziPrim_zpzh
 define %hs* @GHCziPrim_zpzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
   %a_cast = bitcast %hs* %a to %int*
   %b_cast = bitcast %hs* %b to %int*
@@ -99,6 +100,7 @@ define %hs* @GHCziPrim_zpzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
 
 @GHCziPrim_zmzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_zmzh_fun, i64 2, [0 x %hs*] zeroinitializer }
 @GHCziPrim_zmzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_zmzh_tmp to %hs*)
+@GHCziPrim_minusWordzh = alias %hs, %hs* @GHCziPrim_zmzh
 define %hs* @GHCziPrim_zmzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
   %a_cast = bitcast %hs* %a to %int*
   %b_cast = bitcast %hs* %b to %int*
@@ -120,6 +122,7 @@ define %hs* @GHCziPrim_zmzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
 
 @GHCziPrim_ztzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_ztzh_fun, i64 2, [0 x %hs*] zeroinitializer }
 @GHCziPrim_ztzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_ztzh_tmp to %hs*)
+@GHCziPrim_timesWordzh = alias %hs, %hs* @GHCziPrim_ztzh
 define %hs* @GHCziPrim_ztzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
   %a_cast = bitcast %hs* %a to %int*
   %b_cast = bitcast %hs* %b to %int*

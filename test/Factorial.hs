@@ -36,30 +36,30 @@ eq (S n) Z = Z
 eq (S n) (S m) = eq n m
 {-# NOINLINE eq #-}
 
-natToInt :: Nat -> Int
-natToInt Z = 0
-natToInt (S n) = 1 + natToInt n
-{-# NOINLINE natToInt #-}
+natToWord :: Nat -> Word
+natToWord Z = 0
+natToWord (S n) = 1 + natToWord n
+{-# NOINLINE natToWord #-}
 
-intToNat :: Int -> Nat
+intToNat :: Word -> Nat
 intToNat 0 = Z
 intToNat n = S (intToNat (n-1))
 {-# NOINLINE intToNat #-}
 
-fac' :: Int -> Int
+fac' :: Word -> Word
 fac' = go
   where
     go 0     = 1
     go n     = n * fac' (n-1)
 
-genFac :: (Int -> Int -> Int) -> Int -> Int
+genFac :: (Word -> Word -> Word) -> Word -> Word
 genFac foo = go
   where
     go 0     = 1
     go n     = foo n (fac' (n-1))
 {-# NOINLINE genFac #-}
 
-returnLambda :: Int -> (Int -> Int -> Int)
+returnLambda :: Word -> (Word -> Word -> Word)
 returnLambda n | fac' n == 0 = (*)
 returnLambda n = \x y -> x * n * y
 {-# NOINLINE returnLambda #-}
@@ -69,7 +69,7 @@ main :: IO Nat
 -- main = IO (\s -> (# s, Z #))
 main = IO (\s ->
     let n = 10 in
-    let x = intToNat (genFac (returnLambda 2) n) `eq` fac (intToNat n) in x `seq`
+    let x = intToNat (genFac (returnLambda 1) n) `eq` fac (intToNat n) in x `seq`
     (# s, x #))
 
 returnIO :: b -> IO b

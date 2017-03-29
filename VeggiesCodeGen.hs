@@ -237,7 +237,10 @@ genStaticVal env v rhs
         when (isGlobalId v && not (isTopLvl env v)) $ noteExternalVar v
         return $ cast (getIdArity env v) (ident (varIdent env v))
     genStaticArg (Lit (MachInt l)) = do
-        lit <- genIntegerLit (fromIntegral l)
+        lit <- genIntegerLit l
+        return (ident lit)
+    genStaticArg (Lit (MachWord l)) = do
+        lit <- genIntegerLit l
         return (ident lit)
     genStaticArg (Lit l) =
         pprTrace "getStaticArg" (ppr l) $
@@ -699,7 +702,10 @@ genExpr env (Coercion _) = do
     return (varIdent env coercionTokenId)
 
 genExpr env (Lit (MachInt l)) = do
-    liftG $ genIntegerLit (fromIntegral l)
+    liftG $ genIntegerLit l
+
+genExpr env (Lit (MachWord l)) = do
+    liftG $ genIntegerLit l
 
 genExpr env (Lam {}) =
     pprTrace "genExpr" (text "lambda") $
@@ -716,7 +722,9 @@ genArg env (Var v) = do
     when (isGlobalId v && not (isTopLvl env v )) $ liftG $ noteExternalVar v
     return $ varIdent env v
 genArg env (Lit (MachInt l)) = do
-    liftG $ genIntegerLit (fromIntegral l)
+    liftG $ genIntegerLit l
+genArg env (Lit (MachWord l)) = do
+    liftG $ genIntegerLit l
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
 
