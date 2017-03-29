@@ -35,6 +35,8 @@ import Literal
 import Ollvm_ast
 
 import Debug.Trace
+import GHC.Stack
+
 
 data GenEnv = GenEnv
     { topLvls :: IdSet
@@ -500,28 +502,30 @@ deriving instance Show Coq_modul
 -- Generating top-level definitions
 type G = WriterT [TopLevelThing] (WriterT [Var] (State Integer))
 -- Also generting instructions
-type LG = WriterT [Coq_terminator -> Coq_block] (StateT Integer G)
+type PartialBlock = (Coq_block_id, [(Coq_instr_id, Coq_instr)])
+type LG = StateT (Maybe PartialBlock) (WriterT [Coq_block] (StateT Integer G))
 
 runG :: G () -> ([TopLevelThing], [Var])
 runG g = evalState (runWriterT (execWriterT g)) 0
 
 runLG :: LG () -> G ([Coq_block])
-runLG lg = combine . connect <$> evalStateT (execWriterT lg) 0
+runLG lg = evalStateT (execWriterT (evalStateT lg' Nothing)) 0
   where
-    final_term = error "Unterminated last block"
-    connect [mkBlock]          = [mkBlock final_term]
-    connect (mkBlock:mkBlocks) = mkBlock (TERM_Br_1 tident) : blocks'
-      where blocks' = connect mkBlocks
-            tident = (TYPE_Label, ID_Local (blk_id (head blocks')))
-    combine ( (Coq_mk_block i1 bs1 (TERM_Br_1 (TYPE_Label, ID_Local (Anon br))) _)
-            : (Coq_mk_block (Anon i2) bs2 t v)
-            : blocks ) | br == i2
-            = combine (Coq_mk_block i1 (bs1 ++ bs2) t v : blocks)
-    combine (b:bs) = b : combine bs
-    combine [] = []
+    lg' = do
+        firstBlockId <- freshLocal
+        startNamedBlock firstBlockId
+        lg
+        ensureNoBlock
+
+ensureNoBlock :: HasCallStack => LG ()
+ensureNoBlock = do
+    s <- get
+    case s of
+        Nothing -> return ()
+        Just (n,_) -> error $ "Unfinished block"
 
 liftG :: G a -> LG a
-liftG = lift . lift
+liftG = lift .  lift . lift
 
 freshGlobal :: G Coq_local_id
 freshGlobal = fmap Anon $ lift $ lift $ state (id &&& (+1))
@@ -537,8 +541,21 @@ emitTL tlt = tell [tlt]
 
 emitTerm :: Coq_terminator -> LG ()
 emitTerm t = do
-    blockId <- freshLocal
-    tell [\_ -> Coq_mk_block blockId [] t (IVoid 0)]
+    s <- get
+    case s of
+        Nothing -> error $ "No block ot finish"
+        Just (n,instrs) ->
+            lift $ tell [Coq_mk_block n instrs t (IVoid 0)]
+    put Nothing
+
+maybeEmitTerm :: Coq_terminator -> LG ()
+maybeEmitTerm t = do
+    s <- get
+    case s of
+        Nothing -> return ()
+        Just (n,instrs) ->
+            lift $ tell [Coq_mk_block n instrs t (IVoid 0)]
+    put Nothing
 
 emitInstr :: Coq_instr -> LG Coq_ident
 emitInstr instr = do
@@ -549,22 +566,27 @@ emitInstr instr = do
 emitNamedInstr :: Coq_local_id -> Coq_instr -> LG ()
 emitNamedInstr instrId instr = do
     blockId <- freshLocal
-    tell [\t -> Coq_mk_block blockId [(IId instrId, instr)] t (IVoid 0)]
+    modify $ \s ->
+        case s of
+            Nothing -> error $ "No block ot finish"
+            Just (n,instrs) -> Just(n, instrs ++ [(IId instrId, instr)])
 
-namedBlock :: Coq_local_id -> LG ()
-namedBlock blockId = do
-    tell [\t -> Coq_mk_block blockId [] t (IVoid 0)]
+startNamedBlock :: Coq_local_id -> LG ()
+startNamedBlock blockId = do
+    ensureNoBlock
+    put $ Just (blockId, [])
 
-namedBr1Block :: Coq_local_id -> Coq_local_id -> LG ()
+namedBr1Block :: HasCallStack => Coq_local_id -> Coq_local_id -> LG ()
 namedBr1Block blockId toBlockId = do
-    tell [\_ -> Coq_mk_block blockId [] (TERM_Br_1 (TYPE_Label, ID_Local toBlockId)) (IVoid 0)]
+    maybeEmitTerm $ TERM_Br_1 (TYPE_Label, ID_Local blockId)
+    startNamedBlock blockId
+    emitTerm $ TERM_Br_1 (TYPE_Label, ID_Local toBlockId)
 
-namedPhiBlock :: Coq_typ -> Coq_block_id -> [(Coq_ident, Coq_block_id)] -> LG Coq_ident
+namedPhiBlock :: HasCallStack => Coq_typ -> Coq_block_id -> [(Coq_ident, Coq_block_id)] -> LG Coq_ident
 namedPhiBlock ty blockId pred = do
-    tmpId <- freshLocal
-    let phi = (IId tmpId, INSTR_Phi ty [ (i, SV (VALUE_Ident (ID_Local l))) | (i,l) <- pred ])
-    tell [\t -> Coq_mk_block blockId [phi] t (IVoid 0)]
-    return (ID_Local tmpId)
+    ensureNoBlock
+    startNamedBlock blockId
+    emitInstr $ INSTR_Phi ty [ (i, SV (VALUE_Ident (ID_Local l))) | (i,l) <- pred ]
 
 ---
 
@@ -630,7 +652,7 @@ genExpr env (Case scrut b _ alts) = do
     tagOf (LitAlt l)   = Just (litValue l)
 
     genAlt (ac, pats, rhs) = do
-        namedBlock (caseAltEntryRawId b (tagOf ac))
+        startNamedBlock (caseAltEntryRawId b (tagOf ac))
         forM_ (zip [0..] pats) $ \(n,pat) -> do
             patPtr <- emitInstr $ getElemPtr dataConTyP scrut_cast_ident [0,2,n]
             emitNamedInstr (varRawId pat) $ INSTR_Load False hsTyP (hsTyP, ident patPtr) Nothing
