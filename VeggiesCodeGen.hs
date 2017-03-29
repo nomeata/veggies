@@ -38,7 +38,7 @@ import Debug.Trace
 
 data GenEnv = GenEnv
     { topLvls :: IdSet
-    , topLvlArities :: VarEnv Arity
+    , topLvlArities :: VarEnv Integer
     }
 
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
@@ -66,13 +66,13 @@ mkGenEnv :: [(Id, CoreExpr)] -> GenEnv
 mkGenEnv pairs =
     GenEnv { topLvls = mkVarSet (map fst pairs)
            , topLvlArities = mkVarEnv
-                [ (v, length (fst (collectMoreValBinders e))) | (v,e) <- pairs ]
+                [ (v, fromIntegral (length (fst (collectMoreValBinders e)))) | (v,e) <- pairs ]
            }
 
-getIdArity :: GenEnv -> Id -> Arity
-getIdArity env v | isExternalName (idName v)                    = idArity v
+getIdArity :: GenEnv -> Id -> Integer
+getIdArity env v | isExternalName (idName v)                    = fromIntegral $ idArity v
                  | Just a <- lookupVarEnv (topLvlArities env) v = a
-                 | otherwise                                    = idArity v
+                 | otherwise                                    = fromIntegral $ idArity v
 
 isTopLvl :: GenEnv -> Id -> Bool
 isTopLvl env v = v `elemVarSet` topLvls env
@@ -103,14 +103,14 @@ hsTyP :: Coq_typ
 hsTyP = TYPE_Pointer (TYPE_Identified (ID_Global (Name "hs")))
 
 -- An explicit, global function to call
-hsFunTy :: Int -> Int -> Coq_typ
-hsFunTy n m = TYPE_Function hsTyP (envTyP m : replicate n hsTyP)
+hsFunTy :: Integer -> Integer -> Coq_typ
+hsFunTy n m = TYPE_Function hsTyP (envTyP m : replicate (fromIntegral n) hsTyP)
 
 -- Entering a closure
 enterFunTy  = TYPE_Function hsTyP [hsTyP]
 enterFunTyP = TYPE_Pointer enterFunTy
 
-mkThunkTy :: Int -> Coq_typ
+mkThunkTy :: Integer -> Coq_typ
 mkThunkTy n = TYPE_Struct [ enterFunTyP, envTy n' ]
   where n' = max 1 n
 
@@ -155,8 +155,8 @@ genStaticVal env v rhs
     | getIdArity env v == 0
     , Just dc <- isDataConId_maybe v
     = do
-    let val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
-                               , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
+    let val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                               , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
                                , (envTy 0 , SV (VALUE_Array []))
                                ]
     emitTL $ TLGlobal $ Coq_mk_global
@@ -191,13 +191,13 @@ genStaticVal env v rhs
     , not (null val_args)
     = do
     args_idents <- map (hsTyP,) <$> mapM genStaticArg val_args
-    let arity = length args_idents
+    let arity = fromIntegral (length args_idents)
         val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
-                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
+                                , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
                                 , (envTy arity , SV (VALUE_Array args_idents))
                                 ]
-    unless (arity == dataConRepArity dc) $ do
-           pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr arity) (return ())
+    unless (arity == fromIntegral (dataConRepArity dc)) $ do
+           pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr (fromIntegral arity::Int)) (return ())
 
     emitTL $ TLGlobal $ Coq_mk_global
          (varRawIdTmp v)
@@ -323,8 +323,8 @@ genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> G ()
 genTopLvlFunction env v rhs
     | Just dc <- isDataConWorkId_maybe v = genDataConWorker dc
 genTopLvlFunction env v rhs
-    | length params /= getIdArity env v
-    = pprPanic "genTopLvlFunction" (ppr v <+> ppr rhs <+> ppr (getIdArity env v))
+    | length params /= fromIntegral (getIdArity env v)
+    = pprPanic "genTopLvlFunction" (ppr v <+> ppr rhs <+> ppr (fromIntegral (getIdArity env v)::Int))
     | otherwise
     = do
       blocks <- runLG (genExpr env body >>= returnFromFunction)
@@ -337,7 +337,7 @@ genTopLvlFunction env v rhs
   where
     (params, body) = collectMoreValBinders rhs
 
-genIntegerLit :: Int -> G Coq_ident
+genIntegerLit :: Integer -> G Coq_ident
 genIntegerLit l = do
     litNameTmp <- freshGlobal
     litName <- freshGlobal
@@ -396,13 +396,13 @@ allocateDataCon dcName dc = (alloc, fill)
         emitInstr $ INSTR_Store False (enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
 
         tagPtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,1]
-        emitInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, SV (VALUE_Integer (dataConTag dc))) Nothing
+        emitInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, SV (VALUE_Integer (fromIntegral (dataConTag dc)))) Nothing
 
         forM_ (zip [0..] args) $ \(n, arg) -> do
             p <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,2,n]
             emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident arg) Nothing
 
-    thisDataConTy = mkDataConTy (dataConRepArity dc)
+    thisDataConTy = mkDataConTy (fromIntegral (dataConRepArity dc))
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
 genDataConWorker :: DataCon -> G ()
@@ -495,9 +495,9 @@ deriving instance Show Coq_modul
 -}
 
 -- Generating top-level definitions
-type G = WriterT [TopLevelThing] (WriterT [Var] (State Int))
+type G = WriterT [TopLevelThing] (WriterT [Var] (State Integer))
 -- Also generting instructions
-type LG = WriterT [Coq_terminator -> Coq_block] (StateT Int G)
+type LG = WriterT [Coq_terminator -> Coq_block] (StateT Integer G)
 
 runG :: G () -> ([TopLevelThing], [Var])
 runG g = evalState (runWriterT (execWriterT g)) 0
@@ -613,7 +613,7 @@ genExpr env (Case scrut b _ alts) = do
                    | otherwise                   = dataConTyP
 
 
-    tagSwitch :: Coq_ident -> [(Maybe Int, Coq_local_id)] -> Coq_terminator
+    tagSwitch :: Coq_ident -> [(Maybe Integer, Coq_local_id)] -> Coq_terminator
     tagSwitch tag ((_,l):xs) =
         TERM_Switch (tagTy,ident tag) (TYPE_Label, ID_Local l)
             [ ((tagTy, SV (VALUE_Integer n)), (TYPE_Label, ID_Local l))
@@ -623,8 +623,8 @@ genExpr env (Case scrut b _ alts) = do
     scrut_cast_ident = caseScrutCastedIdent b
 
     tagOf DEFAULT      = Nothing
-    tagOf (DataAlt dc) = Just (dataConTag dc)
-    tagOf (LitAlt l)   = Just (fromIntegral (litValue l))
+    tagOf (DataAlt dc) = Just (fromIntegral (dataConTag dc))
+    tagOf (LitAlt l)   = Just (litValue l)
 
     genAlt (ac, pats, rhs) = do
         namedBlock (caseAltEntryRawId b (tagOf ac))
@@ -667,7 +667,7 @@ genExpr env e
     | (f, args) <- collectArgs e
     , let args' = filter isValArg args
     , not (null args') = do
-    let arity = length args'
+    let arity = fromIntegral (length args')
     let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy arity 0)
     let thisFunTyP = TYPE_Pointer (hsFunTy arity 0)
 
@@ -733,13 +733,14 @@ genLetBind env v e
 genLetBind env v rhs | exprIsHNF rhs = (alloc, fill)
   where
     (params, body) = collectMoreValBinders rhs
-    arity = length params
+    arity = fromIntegral $ length params
+    env_size = fromIntegral $ length fvs
 
     fvs = filter isId $ exprsFreeVarsList [rhs]
-    thisFunClosureTy = mkFunClosureTy arity (length fvs)
+    thisFunClosureTy = mkFunClosureTy arity env_size
     thisFunClosureTyP = TYPE_Pointer thisFunClosureTy
 
-    thisFunTy = hsFunTy arity (length fvs)
+    thisFunTy = hsFunTy arity env_size
     thisFunTyP = TYPE_Pointer thisFunTy
 
     alloc = do
@@ -771,9 +772,9 @@ genLetBind env v rhs | exprIsHNF rhs = (alloc, fill)
       blocks <- runLG $ do
         -- load free variables
         castedClosPtr <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (envTyP (length fvs))))
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (envTyP env_size)))
         forM_ (zip [0..] fvs) $ \(n,fv) -> do
-            p <- emitInstr $ getElemPtr (envTyP (length fvs)) castedClosPtr [0,n]
+            p <- emitInstr $ getElemPtr (envTyP env_size) castedClosPtr [0,n]
             emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
         -- evaluate body
         res <- genExpr env body
@@ -783,7 +784,7 @@ genLetBind env v rhs | exprIsHNF rhs = (alloc, fill)
             LINKAGE_Internal
             (funRawId v)
             [ varRawId p | p <- params ]
-            (length fvs)
+            env_size
             blocks
 
 genLetBind env v rhs = (alloc, fill)
@@ -824,12 +825,13 @@ genLetBind env v rhs = (alloc, fill)
             blocks
 
     fvs = filter isId $ exprsFreeVarsList [rhs]
-    thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
+    env_size = fromIntegral $ length fvs
+    thisThunkTyP = TYPE_Pointer $ mkThunkTy env_size
 
 
 
 
-getElemPtr :: Coq_typ -> Coq_ident -> [Int] -> Coq_instr
+getElemPtr :: Coq_typ -> Coq_ident -> [Integer] -> Coq_instr
 getElemPtr t v path
     = INSTR_Op (SV (OP_GetElementPtr t (t, ident v) [(TYPE_I 32, SV (VALUE_Integer n))| n <- path]))
 
@@ -843,16 +845,16 @@ dummyBody = [ Coq_mk_block (Anon 0)
                 (IVoid 1)
             ]
 
-mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Arity -> [Coq_block] -> Coq_definition
+mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Integer -> [Coq_block] -> Coq_definition
 mkHsFunDefinition linkage n param_names env_arity blocks = Coq_mk_definition
     (mkHsFunDeclaration linkage n param_names env_arity)
     (closRawId :  param_names)
     blocks
 
-mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Arity -> Coq_declaration
+mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Integer -> Coq_declaration
 mkHsFunDeclaration linkage n param_names env_arity = Coq_mk_declaration
     n
-    (hsFunTy (length param_names) env_arity)
+    (hsFunTy (fromIntegral (length param_names)) env_arity)
     ([],([] : map (const []) param_names))
     (Just linkage)
     Nothing
@@ -928,24 +930,24 @@ caseScrutCastedIdent n = ID_Local (caseScrutCastedRawId n)
 caseScrutCastedRawId :: Var -> Coq_raw_id
 caseScrutCastedRawId n = Name (codeNameStr (getName n) ++ "_casted")
 
-caseAltEntryIdent :: Var -> Maybe Int -> Coq_ident
+caseAltEntryIdent :: Var -> Maybe Integer -> Coq_ident
 caseAltEntryIdent v mbi = ID_Local (caseAltEntryRawId v mbi)
 
-caseAltEntryRawId :: Var -> Maybe Int -> Coq_raw_id
+caseAltEntryRawId :: Var -> Maybe Integer -> Coq_raw_id
 caseAltEntryRawId n Nothing  = Name (codeNameStr (getName n) ++ "_br_def")
 caseAltEntryRawId n (Just i) = Name (codeNameStr (getName n) ++ "_br_" ++ show i)
 
-caseAltRetIdent :: Var -> Maybe Int -> Coq_ident
+caseAltRetIdent :: Var -> Maybe Integer -> Coq_ident
 caseAltRetIdent v mbi = ID_Local (caseAltRetRawId v mbi)
 
-caseAltRetRawId :: Var -> Maybe Int -> Coq_raw_id
+caseAltRetRawId :: Var -> Maybe Integer -> Coq_raw_id
 caseAltRetRawId n Nothing  = Name (codeNameStr (getName n) ++ "_br_ret")
 caseAltRetRawId n (Just i) = Name (codeNameStr (getName n) ++ "_br_ret_" ++ show i)
 
-caseAltExitIdent :: Var -> Maybe Int -> Coq_ident
+caseAltExitIdent :: Var -> Maybe Integer -> Coq_ident
 caseAltExitIdent v mbi = ID_Local (caseAltExitRawId v mbi)
 
-caseAltExitRawId :: Var -> Maybe Int -> Coq_raw_id
+caseAltExitRawId :: Var -> Maybe Integer -> Coq_raw_id
 caseAltExitRawId n Nothing  = Name (codeNameStr (getName n) ++ "_br_ex")
 caseAltExitRawId n (Just i) = Name (codeNameStr (getName n) ++ "_br_ex_" ++ show i)
 

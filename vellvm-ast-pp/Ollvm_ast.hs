@@ -70,9 +70,9 @@ data Coq_cconv =
    CC_Ccc
  | CC_Fastcc
  | CC_Coldcc
- | CC_Cc Prelude.Int
+ | CC_Cc Prelude.Integer
 
-cconv_rect :: a1 -> a1 -> a1 -> (Prelude.Int -> a1) -> Coq_cconv -> a1
+cconv_rect :: a1 -> a1 -> a1 -> (Prelude.Integer -> a1) -> Coq_cconv -> a1
 cconv_rect f f0 f1 f2 c =
   case c of {
    CC_Ccc -> f;
@@ -80,7 +80,7 @@ cconv_rect f f0 f1 f2 c =
    CC_Coldcc -> f1;
    CC_Cc x -> f2 x}
 
-cconv_rec :: a1 -> a1 -> a1 -> (Prelude.Int -> a1) -> Coq_cconv -> a1
+cconv_rec :: a1 -> a1 -> a1 -> (Prelude.Integer -> a1) -> Coq_cconv -> a1
 cconv_rec =
   cconv_rect
 
@@ -91,17 +91,17 @@ data Coq_param_attr =
  | PARAMATTR_Byval
  | PARAMATTR_Inalloca
  | PARAMATTR_Sret
- | PARAMATTR_Align Prelude.Int
+ | PARAMATTR_Align Prelude.Integer
  | PARAMATTR_Noalias
  | PARAMATTR_Nocapture
  | PARAMATTR_Nest
  | PARAMATTR_Returned
  | PARAMATTR_Nonnull
- | PARAMATTR_Dereferenceable Prelude.Int
+ | PARAMATTR_Dereferenceable Prelude.Integer
 
-param_attr_rect :: a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Int -> a1) ->
-                   a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Int -> a1) ->
-                   Coq_param_attr -> a1
+param_attr_rect :: a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Integer ->
+                   a1) -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Integer ->
+                   a1) -> Coq_param_attr -> a1
 param_attr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 p =
   case p of {
    PARAMATTR_Zeroext -> f;
@@ -118,14 +118,14 @@ param_attr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 p =
    PARAMATTR_Nonnull -> f10;
    PARAMATTR_Dereferenceable x -> f11 x}
 
-param_attr_rec :: a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Int -> a1) ->
-                  a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Int -> a1) ->
+param_attr_rec :: a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Integer -> a1)
+                  -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Integer -> a1) ->
                   Coq_param_attr -> a1
 param_attr_rec =
   param_attr_rect
 
 data Coq_fn_attr =
-   FNATTR_Alignstack Prelude.Int
+   FNATTR_Alignstack Prelude.Integer
  | FNATTR_Alwaysinline
  | FNATTR_Builtin
  | FNATTR_Cold
@@ -155,14 +155,14 @@ data Coq_fn_attr =
  | FNATTR_Uwtable
  | FNATTR_String Prelude.String
  | FNATTR_Key_value ((,) Prelude.String Prelude.String)
- | FNATTR_Attr_grp Prelude.Int
+ | FNATTR_Attr_grp Prelude.Integer
 
-fn_attr_rect :: (Prelude.Int -> a1) -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1
+fn_attr_rect :: (Prelude.Integer -> a1) -> a1 -> a1 -> a1 -> a1 -> a1 -> a1
                 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1
                 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1
-                -> (Prelude.String -> a1) -> (((,) Prelude.String
-                Prelude.String) -> a1) -> (Prelude.Int -> a1) -> Coq_fn_attr
-                -> a1
+                -> a1 -> (Prelude.String -> a1) -> (((,) Prelude.String
+                Prelude.String) -> a1) -> (Prelude.Integer -> a1) ->
+                Coq_fn_attr -> a1
 fn_attr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 =
   case f30 of {
    FNATTR_Alignstack x -> f x;
@@ -197,27 +197,27 @@ fn_attr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18
    FNATTR_Key_value x -> f28 x;
    FNATTR_Attr_grp x -> f29 x}
 
-fn_attr_rec :: (Prelude.Int -> a1) -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1
+fn_attr_rec :: (Prelude.Integer -> a1) -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 ->
+               a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1
                -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 ->
-               a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 ->
                (Prelude.String -> a1) -> (((,) Prelude.String Prelude.String)
-               -> a1) -> (Prelude.Int -> a1) -> Coq_fn_attr -> a1
+               -> a1) -> (Prelude.Integer -> a1) -> Coq_fn_attr -> a1
 fn_attr_rec =
   fn_attr_rect
 
 data Coq_raw_id =
    Name Prelude.String
- | Anon Prelude.Int
+ | Anon Prelude.Integer
 
-raw_id_rect :: (Prelude.String -> a1) -> (Prelude.Int -> a1) -> Coq_raw_id ->
-               a1
+raw_id_rect :: (Prelude.String -> a1) -> (Prelude.Integer -> a1) ->
+               Coq_raw_id -> a1
 raw_id_rect f f0 r =
   case r of {
    Name x -> f x;
    Anon x -> f0 x}
 
-raw_id_rec :: (Prelude.String -> a1) -> (Prelude.Int -> a1) -> Coq_raw_id ->
-              a1
+raw_id_rec :: (Prelude.String -> a1) -> (Prelude.Integer -> a1) -> Coq_raw_id
+              -> a1
 raw_id_rec =
   raw_id_rect
 
@@ -244,7 +244,7 @@ type Coq_function_id = Coq_local_id
 type Coq_block_id = Coq_local_id
 
 data Coq_typ =
-   TYPE_I Prelude.Int
+   TYPE_I Prelude.Integer
  | TYPE_Pointer Coq_typ
  | TYPE_Void
  | TYPE_Half
@@ -256,19 +256,20 @@ data Coq_typ =
  | TYPE_Label
  | TYPE_Metadata
  | TYPE_X86_mmx
- | TYPE_Array Prelude.Int Coq_typ
+ | TYPE_Array Prelude.Integer Coq_typ
  | TYPE_Function Coq_typ ([] Coq_typ)
  | TYPE_Struct ([] Coq_typ)
  | TYPE_Packed_struct ([] Coq_typ)
  | TYPE_Opaque
- | TYPE_Vector Prelude.Int Coq_typ
+ | TYPE_Vector Prelude.Integer Coq_typ
  | TYPE_Identified Coq_ident
 
-typ_rect :: (Prelude.Int -> a1) -> (Coq_typ -> a1 -> a1) -> a1 -> a1 -> a1 ->
-            a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Int -> Coq_typ
-            -> a1 -> a1) -> (Coq_typ -> a1 -> ([] Coq_typ) -> a1) -> (([]
-            Coq_typ) -> a1) -> (([] Coq_typ) -> a1) -> a1 -> (Prelude.Int ->
-            Coq_typ -> a1 -> a1) -> (Coq_ident -> a1) -> Coq_typ -> a1
+typ_rect :: (Prelude.Integer -> a1) -> (Coq_typ -> a1 -> a1) -> a1 -> a1 ->
+            a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Integer
+            -> Coq_typ -> a1 -> a1) -> (Coq_typ -> a1 -> ([] Coq_typ) -> a1)
+            -> (([] Coq_typ) -> a1) -> (([] Coq_typ) -> a1) -> a1 ->
+            (Prelude.Integer -> Coq_typ -> a1 -> a1) -> (Coq_ident -> a1) ->
+            Coq_typ -> a1
 typ_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 t =
   case t of {
    TYPE_I sz -> f sz;
@@ -303,11 +304,12 @@ typ_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 t =
         f17 t0);
    TYPE_Identified id -> f17 id}
 
-typ_rec :: (Prelude.Int -> a1) -> (Coq_typ -> a1 -> a1) -> a1 -> a1 -> a1 ->
-           a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Int -> Coq_typ
-           -> a1 -> a1) -> (Coq_typ -> a1 -> ([] Coq_typ) -> a1) -> (([]
-           Coq_typ) -> a1) -> (([] Coq_typ) -> a1) -> a1 -> (Prelude.Int ->
-           Coq_typ -> a1 -> a1) -> (Coq_ident -> a1) -> Coq_typ -> a1
+typ_rec :: (Prelude.Integer -> a1) -> (Coq_typ -> a1 -> a1) -> a1 -> a1 -> a1
+           -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 -> (Prelude.Integer ->
+           Coq_typ -> a1 -> a1) -> (Coq_typ -> a1 -> ([] Coq_typ) -> a1) ->
+           (([] Coq_typ) -> a1) -> (([] Coq_typ) -> a1) -> a1 ->
+           (Prelude.Integer -> Coq_typ -> a1 -> a1) -> (Coq_ident -> a1) ->
+           Coq_typ -> a1
 typ_rec =
   typ_rect
 
@@ -512,7 +514,7 @@ type Coq_tident = (,) Coq_typ Coq_ident
 
 data Expr a =
    VALUE_Ident Coq_ident
- | VALUE_Integer Prelude.Int
+ | VALUE_Integer Prelude.Integer
  | VALUE_Float Prelude.Float
  | VALUE_Bool Prelude.Bool
  | VALUE_Null
@@ -533,12 +535,12 @@ data Expr a =
  | OP_ExtractElement ((,) Coq_typ a) ((,) Coq_typ a)
  | OP_InsertElement ((,) Coq_typ a) ((,) Coq_typ a) ((,) Coq_typ a)
  | OP_ShuffleVector ((,) Coq_typ a) ((,) Coq_typ a) ((,) Coq_typ a)
- | OP_ExtractValue ((,) Coq_typ a) ([] Prelude.Int)
- | OP_InsertValue ((,) Coq_typ a) ((,) Coq_typ a) ([] Prelude.Int)
+ | OP_ExtractValue ((,) Coq_typ a) ([] Prelude.Integer)
+ | OP_InsertValue ((,) Coq_typ a) ((,) Coq_typ a) ([] Prelude.Integer)
  | OP_Select ((,) Coq_typ a) ((,) Coq_typ a) ((,) Coq_typ a)
 
-coq_Expr_rect :: (Coq_ident -> a2) -> (Prelude.Int -> a2) -> (Prelude.Float
-                 -> a2) -> (Prelude.Bool -> a2) -> a2 -> a2 ->
+coq_Expr_rect :: (Coq_ident -> a2) -> (Prelude.Integer -> a2) ->
+                 (Prelude.Float -> a2) -> (Prelude.Bool -> a2) -> a2 -> a2 ->
                  (Prelude.String -> a2) -> a2 -> a2 -> (([] ((,) Coq_typ a1))
                  -> a2) -> (([] ((,) Coq_typ a1)) -> a2) -> (([]
                  ((,) Coq_typ a1)) -> a2) -> (([] ((,) Coq_typ a1)) -> a2) ->
@@ -551,10 +553,10 @@ coq_Expr_rect :: (Coq_ident -> a2) -> (Prelude.Int -> a2) -> (Prelude.Float
                  Coq_typ a1) -> ((,) Coq_typ a1) -> a2) -> (((,) Coq_typ 
                  a1) -> ((,) Coq_typ a1) -> ((,) Coq_typ a1) -> a2) -> (((,)
                  Coq_typ a1) -> ((,) Coq_typ a1) -> ((,) Coq_typ a1) -> a2)
-                 -> (((,) Coq_typ a1) -> ([] Prelude.Int) -> a2) -> (((,)
-                 Coq_typ a1) -> ((,) Coq_typ a1) -> ([] Prelude.Int) -> a2)
-                 -> (((,) Coq_typ a1) -> ((,) Coq_typ a1) -> ((,) Coq_typ 
-                 a1) -> a2) -> (Expr a1) -> a2
+                 -> (((,) Coq_typ a1) -> ([] Prelude.Integer) -> a2) -> (((,)
+                 Coq_typ a1) -> ((,) Coq_typ a1) -> ([] Prelude.Integer) ->
+                 a2) -> (((,) Coq_typ a1) -> ((,) Coq_typ a1) -> ((,) 
+                 Coq_typ a1) -> a2) -> (Expr a1) -> a2
 coq_Expr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 e =
   case e of {
    VALUE_Ident x -> f x;
@@ -583,23 +585,24 @@ coq_Expr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f1
    OP_InsertValue x x0 x1 -> f22 x x0 x1;
    OP_Select x x0 x1 -> f23 x x0 x1}
 
-coq_Expr_rec :: (Coq_ident -> a2) -> (Prelude.Int -> a2) -> (Prelude.Float ->
-                a2) -> (Prelude.Bool -> a2) -> a2 -> a2 -> (Prelude.String ->
-                a2) -> a2 -> a2 -> (([] ((,) Coq_typ a1)) -> a2) -> (([]
+coq_Expr_rec :: (Coq_ident -> a2) -> (Prelude.Integer -> a2) ->
+                (Prelude.Float -> a2) -> (Prelude.Bool -> a2) -> a2 -> a2 ->
+                (Prelude.String -> a2) -> a2 -> a2 -> (([] ((,) Coq_typ a1))
+                -> a2) -> (([] ((,) Coq_typ a1)) -> a2) -> (([]
                 ((,) Coq_typ a1)) -> a2) -> (([] ((,) Coq_typ a1)) -> a2) ->
-                (([] ((,) Coq_typ a1)) -> a2) -> (Coq_ibinop -> Coq_typ -> a1
-                -> a1 -> a2) -> (Coq_icmp -> Coq_typ -> a1 -> a1 -> a2) ->
-                (Coq_fbinop -> ([] Coq_fast_math) -> Coq_typ -> a1 -> a1 ->
-                a2) -> (Coq_fcmp -> Coq_typ -> a1 -> a1 -> a2) ->
-                (Coq_conversion_type -> Coq_typ -> a1 -> Coq_typ -> a2) ->
-                (Coq_typ -> ((,) Coq_typ a1) -> ([] ((,) Coq_typ a1)) -> a2)
-                -> (((,) Coq_typ a1) -> ((,) Coq_typ a1) -> a2) -> (((,)
+                (Coq_ibinop -> Coq_typ -> a1 -> a1 -> a2) -> (Coq_icmp ->
+                Coq_typ -> a1 -> a1 -> a2) -> (Coq_fbinop -> ([]
+                Coq_fast_math) -> Coq_typ -> a1 -> a1 -> a2) -> (Coq_fcmp ->
+                Coq_typ -> a1 -> a1 -> a2) -> (Coq_conversion_type -> Coq_typ
+                -> a1 -> Coq_typ -> a2) -> (Coq_typ -> ((,) Coq_typ a1) ->
+                ([] ((,) Coq_typ a1)) -> a2) -> (((,) Coq_typ a1) -> ((,)
+                Coq_typ a1) -> a2) -> (((,) Coq_typ a1) -> ((,) Coq_typ 
+                a1) -> ((,) Coq_typ a1) -> a2) -> (((,) Coq_typ a1) -> ((,)
+                Coq_typ a1) -> ((,) Coq_typ a1) -> a2) -> (((,) Coq_typ 
+                a1) -> ([] Prelude.Integer) -> a2) -> (((,) Coq_typ a1) ->
+                ((,) Coq_typ a1) -> ([] Prelude.Integer) -> a2) -> (((,)
                 Coq_typ a1) -> ((,) Coq_typ a1) -> ((,) Coq_typ a1) -> a2) ->
-                (((,) Coq_typ a1) -> ((,) Coq_typ a1) -> ((,) Coq_typ 
-                a1) -> a2) -> (((,) Coq_typ a1) -> ([] Prelude.Int) -> a2) ->
-                (((,) Coq_typ a1) -> ((,) Coq_typ a1) -> ([] Prelude.Int) ->
-                a2) -> (((,) Coq_typ a1) -> ((,) Coq_typ a1) -> ((,) 
-                Coq_typ a1) -> a2) -> (Expr a1) -> a2
+                (Expr a1) -> a2
 coq_Expr_rec =
   coq_Expr_rect
 
@@ -619,17 +622,17 @@ type Coq_tvalue = (,) Coq_typ Coq_value
 
 data Coq_instr_id =
    IId Coq_raw_id
- | IVoid Prelude.Int
+ | IVoid Prelude.Integer
 
-instr_id_rect :: (Coq_raw_id -> a1) -> (Prelude.Int -> a1) -> Coq_instr_id ->
-                 a1
+instr_id_rect :: (Coq_raw_id -> a1) -> (Prelude.Integer -> a1) ->
+                 Coq_instr_id -> a1
 instr_id_rect f f0 i =
   case i of {
    IId x -> f x;
    IVoid x -> f0 x}
 
-instr_id_rec :: (Coq_raw_id -> a1) -> (Prelude.Int -> a1) -> Coq_instr_id ->
-                a1
+instr_id_rec :: (Coq_raw_id -> a1) -> (Prelude.Integer -> a1) -> Coq_instr_id
+                -> a1
 instr_id_rec =
   instr_id_rect
 
@@ -638,9 +641,10 @@ data Coq_instr =
  | INSTR_Call Coq_tident ([] Coq_tvalue)
  | INSTR_Phi Coq_typ ([] ((,) Coq_ident Coq_value))
  | INSTR_Alloca Coq_typ (Prelude.Maybe Coq_tvalue) (Prelude.Maybe
-                                                   Prelude.Int)
- | INSTR_Load Prelude.Bool Coq_typ Coq_tvalue (Prelude.Maybe Prelude.Int)
- | INSTR_Store Prelude.Bool Coq_tvalue Coq_tvalue (Prelude.Maybe Prelude.Int)
+                                                   Prelude.Integer)
+ | INSTR_Load Prelude.Bool Coq_typ Coq_tvalue (Prelude.Maybe Prelude.Integer)
+ | INSTR_Store Prelude.Bool Coq_tvalue Coq_tvalue (Prelude.Maybe
+                                                  Prelude.Integer)
  | INSTR_Fence
  | INSTR_AtomicCmpXchg
  | INSTR_AtomicRMW
@@ -650,11 +654,12 @@ data Coq_instr =
 
 instr_rect :: (Coq_value -> a1) -> (Coq_tident -> ([] Coq_tvalue) -> a1) ->
               (Coq_typ -> ([] ((,) Coq_ident Coq_value)) -> a1) -> (Coq_typ
-              -> (Prelude.Maybe Coq_tvalue) -> (Prelude.Maybe Prelude.Int) ->
-              a1) -> (Prelude.Bool -> Coq_typ -> Coq_tvalue -> (Prelude.Maybe
-              Prelude.Int) -> a1) -> (Prelude.Bool -> Coq_tvalue ->
-              Coq_tvalue -> (Prelude.Maybe Prelude.Int) -> a1) -> a1 -> a1 ->
-              a1 -> a1 -> a1 -> a1 -> Coq_instr -> a1
+              -> (Prelude.Maybe Coq_tvalue) -> (Prelude.Maybe
+              Prelude.Integer) -> a1) -> (Prelude.Bool -> Coq_typ ->
+              Coq_tvalue -> (Prelude.Maybe Prelude.Integer) -> a1) ->
+              (Prelude.Bool -> Coq_tvalue -> Coq_tvalue -> (Prelude.Maybe
+              Prelude.Integer) -> a1) -> a1 -> a1 -> a1 -> a1 -> a1 -> a1 ->
+              Coq_instr -> a1
 instr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 i =
   case i of {
    INSTR_Op x -> f x;
@@ -672,11 +677,11 @@ instr_rect f f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 i =
 
 instr_rec :: (Coq_value -> a1) -> (Coq_tident -> ([] Coq_tvalue) -> a1) ->
              (Coq_typ -> ([] ((,) Coq_ident Coq_value)) -> a1) -> (Coq_typ ->
-             (Prelude.Maybe Coq_tvalue) -> (Prelude.Maybe Prelude.Int) -> a1)
-             -> (Prelude.Bool -> Coq_typ -> Coq_tvalue -> (Prelude.Maybe
-             Prelude.Int) -> a1) -> (Prelude.Bool -> Coq_tvalue -> Coq_tvalue
-             -> (Prelude.Maybe Prelude.Int) -> a1) -> a1 -> a1 -> a1 -> a1 ->
-             a1 -> a1 -> Coq_instr -> a1
+             (Prelude.Maybe Coq_tvalue) -> (Prelude.Maybe Prelude.Integer) ->
+             a1) -> (Prelude.Bool -> Coq_typ -> Coq_tvalue -> (Prelude.Maybe
+             Prelude.Integer) -> a1) -> (Prelude.Bool -> Coq_tvalue ->
+             Coq_tvalue -> (Prelude.Maybe Prelude.Integer) -> a1) -> a1 -> a1
+             -> a1 -> a1 -> a1 -> a1 -> Coq_instr -> a1
 instr_rec =
   instr_rect
 
@@ -737,8 +742,8 @@ data Coq_global =
  (Prelude.Maybe Coq_linkage) (Prelude.Maybe Coq_visibility) (Prelude.Maybe
                                                             Coq_dll_storage) 
  (Prelude.Maybe Coq_thread_local_storage) Prelude.Bool (Prelude.Maybe
-                                                       Prelude.Int) Prelude.Bool 
- (Prelude.Maybe Prelude.String) (Prelude.Maybe Prelude.Int)
+                                                       Prelude.Integer) 
+ Prelude.Bool (Prelude.Maybe Prelude.String) (Prelude.Maybe Prelude.Integer)
 
 g_ident :: Coq_global -> Coq_global_id
 g_ident g =
@@ -785,7 +790,7 @@ g_unnamed_addr g =
   case g of {
    Coq_mk_global _ _ _ _ _ _ _ _ g_unnamed_addr0 _ _ _ _ -> g_unnamed_addr0}
 
-g_addrspace :: Coq_global -> Prelude.Maybe Prelude.Int
+g_addrspace :: Coq_global -> Prelude.Maybe Prelude.Integer
 g_addrspace g =
   case g of {
    Coq_mk_global _ _ _ _ _ _ _ _ _ g_addrspace0 _ _ _ -> g_addrspace0}
@@ -801,7 +806,7 @@ g_section g =
   case g of {
    Coq_mk_global _ _ _ _ _ _ _ _ _ _ _ g_section0 _ -> g_section0}
 
-g_align :: Coq_global -> Prelude.Maybe Prelude.Int
+g_align :: Coq_global -> Prelude.Maybe Prelude.Integer
 g_align g =
   case g of {
    Coq_mk_global _ _ _ _ _ _ _ _ _ _ _ _ g_align0 -> g_align0}
@@ -858,7 +863,7 @@ data Coq_declaration =
  (Prelude.Maybe Coq_linkage) (Prelude.Maybe Coq_visibility) (Prelude.Maybe
                                                             Coq_dll_storage) 
  (Prelude.Maybe Coq_cconv) ([] Coq_fn_attr) (Prelude.Maybe Prelude.String) 
- (Prelude.Maybe Prelude.Int) (Prelude.Maybe Prelude.String)
+ (Prelude.Maybe Prelude.Integer) (Prelude.Maybe Prelude.String)
 
 dc_name :: Coq_declaration -> Coq_function_id
 dc_name d =
@@ -906,7 +911,7 @@ dc_section d =
   case d of {
    Coq_mk_declaration _ _ _ _ _ _ _ _ dc_section0 _ _ -> dc_section0}
 
-dc_align :: Coq_declaration -> Prelude.Maybe Prelude.Int
+dc_align :: Coq_declaration -> Prelude.Maybe Prelude.Integer
 dc_align d =
   case d of {
    Coq_mk_declaration _ _ _ _ _ _ _ _ _ dc_align0 _ -> dc_align0}
@@ -1006,13 +1011,13 @@ data Coq_toplevel_entity =
  | TLE_Source_filename Prelude.String
  | TLE_Global Coq_global
  | TLE_Metadata Coq_raw_id Coq_metadata
- | TLE_Attribute_group Prelude.Int ([] Coq_fn_attr)
+ | TLE_Attribute_group Prelude.Integer ([] Coq_fn_attr)
 
 toplevel_entity_rect :: (Prelude.String -> a1) -> (Prelude.String -> a1) ->
                         (Coq_declaration -> a1) -> (Coq_definition -> a1) ->
                         (Coq_ident -> Coq_typ -> a1) -> (Prelude.String ->
                         a1) -> (Coq_global -> a1) -> (Coq_raw_id ->
-                        Coq_metadata -> a1) -> (Prelude.Int -> ([]
+                        Coq_metadata -> a1) -> (Prelude.Integer -> ([]
                         Coq_fn_attr) -> a1) -> Coq_toplevel_entity -> a1
 toplevel_entity_rect f f0 f1 f2 f3 f4 f5 f6 f7 t =
   case t of {
@@ -1030,8 +1035,8 @@ toplevel_entity_rec :: (Prelude.String -> a1) -> (Prelude.String -> a1) ->
                        (Coq_declaration -> a1) -> (Coq_definition -> a1) ->
                        (Coq_ident -> Coq_typ -> a1) -> (Prelude.String -> a1)
                        -> (Coq_global -> a1) -> (Coq_raw_id -> Coq_metadata
-                       -> a1) -> (Prelude.Int -> ([] Coq_fn_attr) -> a1) ->
-                       Coq_toplevel_entity -> a1
+                       -> a1) -> (Prelude.Integer -> ([] Coq_fn_attr) -> a1)
+                       -> Coq_toplevel_entity -> a1
 toplevel_entity_rec =
   toplevel_entity_rect
 
