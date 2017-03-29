@@ -52,11 +52,24 @@ fac' = go
     go 0     = 1
     go n     = n * fac' (n-1)
 
+genFac :: (Int -> Int -> Int) -> Int -> Int
+genFac foo = go
+  where
+    go 0     = 1
+    go n     = foo n (fac' (n-1))
+{-# NOINLINE genFac #-}
+
+returnLambda :: Int -> (Int -> Int -> Int)
+returnLambda n | fac' n == 0 = (*)
+returnLambda n = \x y -> x * n * y
+{-# NOINLINE returnLambda #-}
+
+
 main :: IO Nat
 -- main = IO (\s -> (# s, Z #))
 main = IO (\s ->
     let n = 10 in
-    let x = intToNat (fac' n) `eq` fac (intToNat n) in x `seq`
+    let x = intToNat (genFac (returnLambda 2) n) `eq` fac (intToNat n) in x `seq`
     (# s, x #))
 
 returnIO :: b -> IO b

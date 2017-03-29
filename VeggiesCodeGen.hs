@@ -111,7 +111,7 @@ enterFunTy  = TYPE_Function hsTyP [hsTyP]
 enterFunTyP = TYPE_Pointer enterFunTy
 
 mkThunkTy :: Int -> Coq_typ
-mkThunkTy n = TYPE_Struct [ enterFunTyP, TYPE_Array n' hsTyP ]
+mkThunkTy n = TYPE_Struct [ enterFunTyP, envTy n' ]
   where n' = max 1 n
 
 -- space for at least one element!
@@ -129,6 +129,7 @@ tagTy = TYPE_I 64
 tagTyP = TYPE_Pointer tagTy
 
 arityTy = TYPE_I 64
+arityTyP = TYPE_Pointer arityTy
 
 mkDataConTy n = TYPE_Struct [ enterFunTyP, tagTy, TYPE_Array n hsTyP ]
 
@@ -331,6 +332,7 @@ genTopLvlFunction env v rhs
             LINKAGE_External
             (funRawId v)
             [ varRawId p | p <- params ]
+            0
             blocks
   where
     (params, body) = collectMoreValBinders rhs
@@ -412,7 +414,8 @@ genDataConWorker dc = do
         returnFromFunction (ID_Local (Name "dc"))
     emitTL $ TLDef $ mkHsFunDefinition linkage
         (funRawId (dataConWorkId dc))
-        [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]] $
+        [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
+        0
         blocks
   where
     linkage | isUnboxedTupleCon dc -- || isUnboxedSumCon dc -- see Id.hasNoBinding
@@ -727,6 +730,62 @@ genLetBind env v e
             fill arg_locals
       in (alloc, fill')
 
+genLetBind env v rhs | exprIsHNF rhs = (alloc, fill)
+  where
+    (params, body) = collectMoreValBinders rhs
+    arity = length params
+
+    fvs = filter isId $ exprsFreeVarsList [rhs]
+    thisFunClosureTy = mkFunClosureTy arity (length fvs)
+    thisFunClosureTyP = TYPE_Pointer thisFunClosureTy
+
+    thisFunTy = hsFunTy arity (length fvs)
+    thisFunTyP = TYPE_Pointer thisFunTy
+
+    alloc = do
+        closureRawPtr <- genMalloc thisFunClosureTyP
+        emitNamedInstr (varRawId v) $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident closureRawPtr) hsTyP))
+        return ()
+
+        liftG $ genFunCode
+
+    fill = do
+        castedPtr <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (varIdent env v)) thisFunClosureTyP))
+
+        p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,0]
+        emitInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident p) (enterFunTyP, ident returnArgIdent) Nothing
+
+        p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,1]
+        emitInstr $ INSTR_Store False (TYPE_Pointer thisFunTyP, ident p) (thisFunTyP, ident (funIdent env v)) Nothing
+
+        p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,2]
+        emitInstr $ INSTR_Store False (arityTyP, ident p) (arityTy, SV (VALUE_Integer arity)) Nothing
+
+        forM_ (zip [0..] fvs) $ \(n,fv) -> do
+            p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,3,n]
+            emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident (varIdent env fv)) Nothing
+
+    genFunCode = do
+      blocks <- runLG $ do
+        -- load free variables
+        castedClosPtr <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (envTyP (length fvs))))
+        forM_ (zip [0..] fvs) $ \(n,fv) -> do
+            p <- emitInstr $ getElemPtr (envTyP (length fvs)) castedClosPtr [0,n]
+            emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
+        -- evaluate body
+        res <- genExpr env body
+        -- TODO: update thunk here
+        returnFromFunction res
+      emitTL $ TLDef $ mkHsFunDefinition
+            LINKAGE_Internal
+            (funRawId v)
+            [ varRawId p | p <- params ]
+            (length fvs)
+            blocks
+
 genLetBind env v rhs = (alloc, fill)
   where
     alloc = do
@@ -784,16 +843,16 @@ dummyBody = [ Coq_mk_block (Anon 0)
                 (IVoid 1)
             ]
 
-mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> [Coq_block] -> Coq_definition
-mkHsFunDefinition linkage n param_names blocks = Coq_mk_definition
-    (mkHsFunDeclaration linkage n param_names)
+mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Arity -> [Coq_block] -> Coq_definition
+mkHsFunDefinition linkage n param_names env_arity blocks = Coq_mk_definition
+    (mkHsFunDeclaration linkage n param_names env_arity)
     (closRawId :  param_names)
     blocks
 
-mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Coq_declaration
-mkHsFunDeclaration linkage n param_names = Coq_mk_declaration
+mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Arity -> Coq_declaration
+mkHsFunDeclaration linkage n param_names env_arity = Coq_mk_declaration
     n
-    (hsFunTy (length param_names) 0)
+    (hsFunTy (length param_names) env_arity)
     ([],([] : map (const []) param_names))
     (Just linkage)
     Nothing
