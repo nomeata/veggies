@@ -175,6 +175,8 @@ genStaticVal env v rhs
            Nothing
            Nothing
            False
+
+-- A top-level data con application
 genStaticVal env v rhs
     | (Var f, args) <- collectArgs rhs
     , Just dc <- isDataConId_maybe f
@@ -183,16 +185,16 @@ genStaticVal env v rhs
     = do
     let args_idents = [ (hsTyP, genStaticArg e) | e <- val_args ]
 
-        externals = [ v | Var v <- val_args, isGlobalId v && not (isTopLvl env v) ]
 
         arity = length args_idents
-        val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+        val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
                                , (envTy arity , SV (VALUE_Array args_idents))
                                ]
     unless (arity == dataConRepArity dc) $ do
            pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr arity) (return ())
 
+    mapM_ noteExternalVar [ v | Var v <- val_args, isGlobalId v && not (isTopLvl env v) ]
     emitTL $ TLGlobal $ Coq_mk_global
          (varRawIdTmp v)
          (mkDataConTy arity) --hsTyP
@@ -232,6 +234,7 @@ genStaticVal env v rhs
                            SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
+-- A top-level function
 genStaticVal env v rhs | exprIsHNF rhs = do
     genTopLvlFunction env v rhs
     emitTL $ TLGlobal $ Coq_mk_global
@@ -266,6 +269,7 @@ genStaticVal env v rhs | exprIsHNF rhs = do
                            , (envTy 0 , SV (VALUE_Array []))
                       ]
 
+-- A static thunk
 genStaticVal env v rhs = do
     blocks <- runLG $ do
         ret <- genExpr env rhs
@@ -474,8 +478,8 @@ freshGlobal = fmap Anon $ liftG $ lift $ lift $ state (id &&& (+1))
 freshLocal :: LG Coq_local_id
 freshLocal = fmap Anon $ lift $ state (id &&& (+1))
 
-noteExternalVar :: Var -> LG ()
-noteExternalVar v = liftG $ lift $ tell [v]
+noteExternalVar :: Var -> G ()
+noteExternalVar v = lift $ tell [v]
 
 emitTL :: TopLevelThing -> G ()
 emitTL tlt = tell [tlt]
@@ -626,13 +630,13 @@ genExpr env e
   where
 
 genExpr env (Var v) = do
-    when (isGlobalId v && not (isTopLvl env v)) $ noteExternalVar v
+    when (isGlobalId v && not (isTopLvl env v)) $ liftG $ noteExternalVar v
     codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
     code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
     emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident (varIdent env v))]
 
 genExpr env (Coercion _) = do
-    noteExternalVar coercionTokenId
+    liftG $ noteExternalVar coercionTokenId
     return (varIdent env coercionTokenId)
 
 genExpr env e =
@@ -643,7 +647,7 @@ genArg :: GenEnv -> CoreArg -> LG Coq_ident
 genArg env (Cast e _) = genArg env e
 genArg env (App e a) | isTyCoArg a = genArg env e
 genArg env (Var v) = do
-    when (isGlobalId v && not (isTopLvl env v )) $ noteExternalVar v
+    when (isGlobalId v && not (isTopLvl env v )) $ liftG $ noteExternalVar v
     return $ varIdent env v
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
@@ -695,7 +699,7 @@ genLetBind env v rhs = (alloc, fill)
             (funRawId v)
             blocks
 
-    fvs = exprsFreeVarsList [rhs]
+    fvs = filter isId $ exprsFreeVarsList [rhs]
     thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
 
 

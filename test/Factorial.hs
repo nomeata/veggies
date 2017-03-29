@@ -1,11 +1,9 @@
-{-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE UnboxedTuples #-}
 -- module Factorial where
 
 import GHC.Types (IO(..))
-import GHC.Prim (seq)
 
 data Nat = Z | S Nat
 
@@ -31,17 +29,16 @@ sub (S n)  Z = n
 sub (S n) (S m) = sub n m
 {-# NOINLINE sub #-}
 
-eq :: Nat -> Nat -> Nat
-eq Z     Z = S Z
-eq Z     (S n) = Z
-eq (S n) Z = Z
-eq (S n) (S m) = eq n m
+eq :: Nat -> Int -> Nat
+eq Z     0 = S Z
+eq Z     _ = Z
+eq (S n) m = eq n (m - 1)
 {-# NOINLINE eq #-}
 
 main :: IO Nat
 -- main = IO (\s -> (# s, Z #))
 main = IO (\s ->
-    let x = (S (S (S (S (S (S Z)))))) `eq` fac (S (S (S Z))) in
+    let x = fac (S (S (S Z))) `eq` 6 in
     (# s, x #))
 
 returnIO :: b -> IO b
