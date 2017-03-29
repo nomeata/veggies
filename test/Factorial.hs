@@ -29,16 +29,34 @@ sub (S n)  Z = n
 sub (S n) (S m) = sub n m
 {-# NOINLINE sub #-}
 
-eq :: Nat -> Int -> Nat
-eq Z     0 = S Z
+eq :: Nat -> Nat -> Nat
+eq Z     Z = S Z
 eq Z     _ = Z
-eq (S n) m = eq n (m - 1)
+eq (S n) Z = Z
+eq (S n) (S m) = eq n m
 {-# NOINLINE eq #-}
+
+natToInt :: Nat -> Int
+natToInt Z = 0
+natToInt (S n) = 1 + natToInt n
+{-# NOINLINE natToInt #-}
+
+intToNat :: Int -> Nat
+intToNat 0 = Z
+intToNat n = S (intToNat (n-1))
+{-# NOINLINE intToNat #-}
+
+fac' :: Int -> Int
+fac' = go
+  where
+    go 0     = 1
+    go n     = n * fac' (n-1)
 
 main :: IO Nat
 -- main = IO (\s -> (# s, Z #))
 main = IO (\s ->
-    let x = fac (S (S (S Z))) `eq` 6 in
+    let n = 10 in
+    let x = intToNat (fac' n) `eq` fac (intToNat n) in x `seq`
     (# s, x #))
 
 returnIO :: b -> IO b

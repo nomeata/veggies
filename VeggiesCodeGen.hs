@@ -695,6 +695,9 @@ genExpr env (Coercion _) = do
     liftG $ noteExternalVar coercionTokenId
     return (varIdent env coercionTokenId)
 
+genExpr env (Lit (MachInt l)) = do
+    liftG $ genIntegerLit (fromIntegral l)
+
 genExpr env e =
     pprTrace "genExpr" (ppr e) $
     emitInstr $ noop hsTyP (SV (VALUE_Null))
