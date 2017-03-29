@@ -26,6 +26,7 @@ import Encoding
 import Outputable
 import PrelNames
 import TysWiredIn
+import TysPrim
 import BasicTypes
 import VarSet
 import VarEnv
@@ -81,6 +82,7 @@ defaultTyDecls =
     [ TLTyDef $ Coq_mk_type_decl (Name "hs")    mkClosureTy
     , TLTyDef $ Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
     , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
+    , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
     ]
 
 returnArgDecl :: TopLevelThing
@@ -143,6 +145,10 @@ mkFunClosureTy n m =
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
 
+mkIntBoxTy = TYPE_Struct [ enterFunTyP, TYPE_I 64 ]
+intBoxTy = TYPE_Identified (ID_Global (Name "int"))
+intBoxTyP = TYPE_Pointer intBoxTy
+
 genStaticVal :: GenEnv -> Var -> CoreExpr -> G ()
 genStaticVal env v rhs
     | getIdArity env v == 0
@@ -183,18 +189,15 @@ genStaticVal env v rhs
     , let val_args = mapMaybe getStaticArg args
     , not (null val_args)
     = do
-    let args_idents = [ (hsTyP, genStaticArg e) | e <- val_args ]
-
-
-        arity = length args_idents
+    args_idents <- map (hsTyP,) <$> mapM genStaticArg val_args
+    let arity = length args_idents
         val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
-                               , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
-                               , (envTy arity , SV (VALUE_Array args_idents))
-                               ]
+                                , (TYPE_I 64, SV (VALUE_Integer (dataConTag dc)))
+                                , (envTy arity , SV (VALUE_Array args_idents))
+                                ]
     unless (arity == dataConRepArity dc) $ do
            pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr arity) (return ())
 
-    mapM_ noteExternalVar [ v | Var v <- val_args, isGlobalId v && not (isTopLvl env v) ]
     emitTL $ TLGlobal $ Coq_mk_global
          (varRawIdTmp v)
          (mkDataConTy arity) --hsTyP
@@ -228,11 +231,19 @@ genStaticVal env v rhs
     getStaticArg (Lit l)                 = Just (Lit l)
     getStaticArg _                       = Nothing
 
-    genStaticArg :: CoreExpr -> Coq_value
-    genStaticArg (Var v) = cast (getIdArity env v) (ident (varIdent env v))
-    genStaticArg (Lit l) = pprTrace "getStaticArg" (ppr l) $
-                           SV (VALUE_Null)
+    genStaticArg :: CoreExpr -> G Coq_value
+    genStaticArg (Var v) = do
+        when (isGlobalId v && not (isTopLvl env v)) $ noteExternalVar v
+        return $ cast (getIdArity env v) (ident (varIdent env v))
+    genStaticArg (Lit (MachInt l)) = do
+        lit <- genIntegerLit (fromIntegral l)
+        return (ident lit)
+    genStaticArg (Lit l) =
+        pprTrace "getStaticArg" (ppr l) $
+        return $ SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
+
+
 
 -- A top-level function
 genStaticVal env v rhs | exprIsHNF rhs = do
@@ -324,6 +335,40 @@ genTopLvlFunction env v rhs
   where
     (params, body) = collectMoreValBinders rhs
 
+genIntegerLit :: Int -> G Coq_ident
+genIntegerLit l = do
+    litNameTmp <- freshGlobal
+    litName <- freshGlobal
+
+    let val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                                , (TYPE_I 64, SV (VALUE_Integer (fromIntegral l)))
+                                ]
+
+    emitTL $ TLGlobal $ Coq_mk_global
+         litNameTmp
+         intBoxTy
+         True -- constant
+         (Just val)
+         (Just LINKAGE_Private)
+         Nothing
+         Nothing
+         Nothing
+         False
+         Nothing
+         False
+         Nothing
+         Nothing
+    emitTL $ TLAlias $ Coq_mk_alias
+         litName
+         hsTyP
+         (SV (OP_Conversion Bitcast intBoxTy (ident (ID_Global litNameTmp)) hsTyP))
+         (Just LINKAGE_Private)
+         Nothing
+         Nothing
+         Nothing
+         False
+
+    return $ ID_Global litName
 
 genMalloc :: Coq_typ -> LG Coq_ident
 genMalloc t = do
@@ -472,8 +517,8 @@ runLG lg = combine . connect <$> evalStateT (execWriterT lg) 0
 liftG :: G a -> LG a
 liftG = lift . lift
 
-freshGlobal :: LG Coq_local_id
-freshGlobal = fmap Anon $ liftG $ lift $ lift $ state (id &&& (+1))
+freshGlobal :: G Coq_local_id
+freshGlobal = fmap Anon $ lift $ lift $ state (id &&& (+1))
 
 freshLocal :: LG Coq_local_id
 freshLocal = fmap Anon $ lift $ state (id &&& (+1))
@@ -546,8 +591,11 @@ genExpr env (Case scrut b _ alts) = do
     scrut_eval <- genExpr env scrut
     emitNamedInstr (varRawId b) $ noop hsTyP (ident scrut_eval)
 
-    emitNamedInstr scrut_cast_raw_id $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident scrut_eval) dataConTyP))
-    t <- getTag scrut_cast_ident
+    emitNamedInstr scrut_cast_raw_id $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident scrut_eval) scrut_cast_tyP))
+
+    tagPtr <- emitInstr $ getElemPtr scrut_cast_tyP scrut_cast_ident [0,1]
+    t <- emitInstr $ INSTR_Load False tagTy (tagTyP, ident tagPtr) Nothing
+
     emitTerm $ tagSwitch t [ (tagOf ac, caseAltEntryRawId b (tagOf ac))
                            | (ac, _, _) <- alts ]
 
@@ -558,6 +606,10 @@ genExpr env (Case scrut b _ alts) = do
         | (ac, _, _) <- alts ]
     return res
   where
+    scrut_cast_tyP | intPrimTy `eqType` idType b = intBoxTyP
+                   | otherwise                   = dataConTyP
+
+
     tagSwitch :: Coq_ident -> [(Maybe Int, Coq_local_id)] -> Coq_terminator
     tagSwitch tag ((_,l):xs) =
         TERM_Switch (tagTy,ident tag) (TYPE_Label, ID_Local l)
@@ -649,6 +701,8 @@ genArg env (App e a) | isTyCoArg a = genArg env e
 genArg env (Var v) = do
     when (isGlobalId v && not (isTopLvl env v )) $ liftG $ noteExternalVar v
     return $ varIdent env v
+genArg env (Lit (MachInt l)) = do
+    liftG $ genIntegerLit (fromIntegral l)
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
 
@@ -703,11 +757,6 @@ genLetBind env v rhs = (alloc, fill)
     thisThunkTyP = TYPE_Pointer $ mkThunkTy (length fvs)
 
 
-getTag :: Coq_ident -> LG Coq_ident
-getTag scrut_cast = do
-    tagPtr <- emitInstr $ getElemPtr dataConTyP scrut_cast [0,1]
-    loaded <- emitInstr $ INSTR_Load False tagTy (tagTyP, ident tagPtr) Nothing
-    return loaded
 
 
 getElemPtr :: Coq_typ -> Coq_ident -> [Int] -> Coq_instr
