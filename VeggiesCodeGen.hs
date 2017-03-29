@@ -681,6 +681,10 @@ genExpr env e
         (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
   where
 
+genExpr env (Var v) | isUnliftedType (idType v) = do
+    when (isGlobalId v && not (isTopLvl env v)) $ liftG $ noteExternalVar v
+    return (varIdent env v)
+
 genExpr env (Var v) = do
     when (isGlobalId v && not (isTopLvl env v)) $ liftG $ noteExternalVar v
     codePtr <- emitInstr $ getElemPtr hsTyP (varIdent env v) [0,0]
