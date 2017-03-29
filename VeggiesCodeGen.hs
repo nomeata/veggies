@@ -112,6 +112,11 @@ mkThunkTy :: Int -> Coq_typ
 mkThunkTy n = TYPE_Struct [ enterFunTyP, TYPE_Array n' hsTyP ]
   where n' = max 1 n
 
+-- space for at least one element!
+mkThunkArray :: [Coq_tvalue] -> Coq_value
+mkThunkArray [] = SV (VALUE_Array [(hsTyP, SV VALUE_Null)])
+mkThunkArray xs = SV (VALUE_Array xs)
+
 thunkTy :: Coq_typ
 thunkTy = TYPE_Identified (ID_Global (Name "thunk"))
 
@@ -227,8 +232,7 @@ genStaticVal env v rhs
                            SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
--- TODO: Top-level thunks are different!
-genStaticVal env v rhs = do
+genStaticVal env v rhs | exprIsHNF rhs = do
     genTopLvlFunction env v rhs
     emitTL $ TLGlobal $ Coq_mk_global
             (varRawIdTmp v)
@@ -261,7 +265,43 @@ genStaticVal env v rhs = do
                            , (TYPE_I 64, SV (VALUE_Integer arity))
                            , (envTy 0 , SV (VALUE_Array []))
                       ]
-    -- casted_val = SV $ OP_Conversion Bitcast (mkFunClosureTy arity 0) val hsTy
+
+genStaticVal env v rhs = do
+    blocks <- runLG $ do
+        ret <- genExpr env rhs
+        -- TODO: update thunk here
+        returnFromFunction ret
+    emitTL $ TLDef $ mkEnterFunDefinition
+        LINKAGE_Internal
+        (funRawId v)
+        blocks
+    emitTL $ TLGlobal $ Coq_mk_global
+            (varRawIdTmp v)
+            (mkThunkTy 0)
+            True -- constant
+            (Just val)
+            (Just LINKAGE_Private)
+            Nothing
+            Nothing
+            Nothing
+            False
+            Nothing
+            False
+            Nothing
+            Nothing
+    emitTL $ TLAlias $ Coq_mk_alias
+            (varRawId v)
+            hsTyP
+            (SV (OP_Conversion Bitcast (TYPE_Pointer (mkThunkTy 0)) (ident (ID_Global (varRawIdTmp v))) hsTyP))
+            (Just LINKAGE_External)
+            Nothing
+            Nothing
+            Nothing
+            False
+  where
+    val = SV $ VALUE_Struct [ (enterFunTyP, ident (funIdent env v))
+                            , (envTy 0,     mkThunkArray [])
+                            ]
 
 genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> G ()
 genTopLvlFunction env v rhs
@@ -279,6 +319,7 @@ genTopLvlFunction env v rhs
             blocks
   where
     (params, body) = collectMoreValBinders rhs
+
 
 genMalloc :: Coq_typ -> LG Coq_ident
 genMalloc t = do
@@ -647,6 +688,7 @@ genLetBind env v rhs = (alloc, fill)
             emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
         -- evaluate body
         res <- genExpr env rhs
+        -- TODO: update thunk here
         returnFromFunction res
       emitTL $ TLDef $ mkEnterFunDefinition
             LINKAGE_Internal
