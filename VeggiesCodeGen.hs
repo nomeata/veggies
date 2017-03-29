@@ -62,6 +62,7 @@ genCode name tycons binds
     defaultDecls =
         [ mallocDecl
         , returnArgDecl
+        , badArityDecl
         ]
 
 mkGenEnv :: [(Id, CoreExpr)] -> GenEnv
@@ -382,7 +383,7 @@ genMalloc t = do
     -- http://stackoverflow.com/a/30830445/946226
     offset <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr t (t, SV VALUE_Null) [(TYPE_I 32, SV (VALUE_Integer 1))]))
     size <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint t (ident offset) (TYPE_I 64)))
-    emitInstr $ INSTR_Call (mallocTy, ID_Global (Name "malloc")) [(TYPE_I 64, ident size)]
+    emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
 
 allocateDataCon :: Coq_raw_id -> DataCon -> (LG (), [Coq_ident] ->  LG ())
 allocateDataCon dcName dc = (alloc, fill)
@@ -432,12 +433,31 @@ genDataConWorker dc = do
 
 mallocRetTyP = TYPE_Pointer (TYPE_I 8)
 mallocTy = TYPE_Function mallocRetTyP [TYPE_I 64]
+mallocIdent = ID_Global (Name "malloc")
+
+badArityTy = TYPE_Function hsTyP []
+badArityIdent = ID_Global (Name "rts_badArity")
+
 
 mallocDecl :: TopLevelThing
 mallocDecl = TLDecl $ Coq_mk_declaration
     (Name "malloc")
     mallocTy
     ([],[[]])
+    Nothing
+    Nothing
+    Nothing
+    Nothing
+    []
+    Nothing
+    Nothing
+    Nothing
+
+badArityDecl :: TopLevelThing
+badArityDecl = TLDecl $ Coq_mk_declaration
+    (Name "rts_badArity")
+    badArityTy
+    ([],[])
     Nothing
     Nothing
     Nothing
@@ -700,14 +720,33 @@ genExpr env e
 
     castedFun <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) thisFunClosTyP))
-    codePtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
-    code <- emitInstr $ INSTR_Load False thisFunTyP (thisFunTyP, ident codePtr) Nothing
+    funPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
+    fun <- emitInstr $ INSTR_Load False thisFunTyP (thisFunTyP, ident funPtr) Nothing
 
+    arityPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,2]
+    actualArity <- emitInstr $ INSTR_Load False arityTyP (arityTyP, ident arityPtr) Nothing
+
+    okLabel <- freshLocal
+    okRetLabel <- freshLocal
+    badLabel <- freshLocal
+    badRetLabel <- freshLocal
+    joinLabel <- freshLocal
+
+    emitTerm $ TERM_Switch (arityTy,ident actualArity) (TYPE_Label, ID_Local badLabel)
+        [ ((arityTy, SV (VALUE_Integer arity)), (TYPE_Label, ID_Local okLabel)) ]
+
+    startNamedBlock okLabel
     closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
     args_locals <- mapM (genArg env) args'
-    emitInstr $ INSTR_Call (thisFunTyP, code) $
+    ret <- emitInstr $ INSTR_Call (thisFunTyP, fun) $
         (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
-  where
+    namedBr1Block okRetLabel joinLabel
+
+    startNamedBlock badLabel
+    badRet <- emitInstr $ INSTR_Call (badArityTy, badArityIdent) []
+    namedBr1Block badRetLabel joinLabel
+
+    namedPhiBlock hsTyP joinLabel [ (ret, okRetLabel) , (badRet, badRetLabel) ]
 
 genExpr env (Var v) | isUnliftedType (idType v) = do
     when (isGlobalId v && not (isTopLvl env v)) $ liftG $ noteExternalVar v

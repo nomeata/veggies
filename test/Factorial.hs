@@ -3,8 +3,6 @@
 {-# LANGUAGE UnboxedTuples #-}
 -- module Factorial where
 
-import GHC.Types (IO(..))
-
 data Nat = Z | S Nat
 
 pred Z = Z
@@ -59,27 +57,20 @@ genFac foo = go
     go n     = foo n (fac' (n-1))
 {-# NOINLINE genFac #-}
 
-returnLambda :: Word -> (Word -> Word -> Word)
-returnLambda n | fac' n == 0 = (*)
-returnLambda n = \x y -> x * n * y
-{-# NOINLINE returnLambda #-}
+returnLambda1 :: Word -> (Word -> Word -> Word)
+returnLambda1 n x | fac' n == 0 = (x*)
+returnLambda1 n x = \y -> x * n * y
+{-# NOINLINE returnLambda1 #-}
+
+returnLambda2 :: Word -> (Word -> Word -> Word)
+returnLambda2 n | fac' n == 0 = (*)
+returnLambda2 n = \x y -> x * n * y
+{-# NOINLINE returnLambda2 #-}
 
 
 main :: IO Nat
 -- main = IO (\s -> (# s, Z #))
-main = IO (\s ->
+main =
     let n = 10 in
-    let x = intToNat (genFac (returnLambda 1) n) `eq` fac (intToNat n) in x `seq`
-    (# s, x #))
-
-returnIO :: b -> IO b
-returnIO b = IO (\s -> (# s , b #))
-{-# NOINLINE returnIO #-}
-
-traceIO :: a -> b -> IO b
-traceIO a b = IO (\s -> a `seq` (# s , b #))
-{-# NOINLINE traceIO #-}
-
-traceTag ::  a -> b -> b
-traceTag !a b = b
-{-# NOINLINE traceTag #-}
+    let x = intToNat (genFac (returnLambda2 1) n) `eq` fac (intToNat n) in x `seq`
+    return x
