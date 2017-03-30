@@ -124,8 +124,3 @@ namedPhiBlock ty blockId pred = do
     ensureNoBlock
     startNamedBlock blockId
     emitInstr $ INSTR_Phi ty [ (i, SV (VALUE_Ident (ID_Local l))) | (i,l) <- pred ]
-
-ident id = SV (VALUE_Ident id)
-
-noop ty val = INSTR_Op (SV (OP_Conversion Bitcast ty val ty))
-
