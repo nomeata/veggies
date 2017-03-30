@@ -11,7 +11,7 @@
 
 module Main (main) where
 
-import qualified VeggiesHooks as Veggies
+import qualified Veggies.Hooks as Veggies
 
 -- The official GHC API
 import qualified GHC

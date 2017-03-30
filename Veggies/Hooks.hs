@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP, GADTs, ScopedTypeVariables, ImpredicativeTypes, OverloadedStrings, TupleSections, StandaloneDeriving #-}
-module VeggiesHooks where
+module Veggies.Hooks where
 
 import           CorePrep             (corePrepPgm)
 -- import           Gen2.GHC.CorePrep    (corePrepPgm) -- customized to not float new toplevel binds
@@ -30,7 +30,7 @@ import           System.IO.Error
 
 import qualified GHC.LanguageExtensions as Ext
 
-import qualified VeggiesCodeGen as Veggies
+import qualified Veggies.CodeGen as Veggies
 import qualified Ast2Ast as LLVM
 import qualified Ast2Assembly as LLVM
 

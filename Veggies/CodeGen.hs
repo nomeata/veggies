@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE StandaloneDeriving #-}
-module VeggiesCodeGen where
+module Veggies.CodeGen where
 
 import Data.List
 import Data.Maybe
