@@ -54,10 +54,10 @@ import Data.Dynamic (toDyn)
 -- called in the program).  It catches otherwise uncaught exceptions,
 -- and also flushes stdout\/stderr before exiting.
 runMainIO :: IO a -> IO a
-runMainIO main = main
-
 {-
 runMainIO main = main
+-}
+runMainIO main =
     do
       main_thread_id <- myThreadId
       weak_tid <- mkWeakThreadId main_thread_id
@@ -69,7 +69,6 @@ runMainIO main = main
       main -- hs_exit() will flush
     `catch`
       topHandler
--}
 
 install_interrupt_handler :: IO () -> IO ()
 #ifdef mingw32_HOST_OS

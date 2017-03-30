@@ -84,22 +84,6 @@ getIdArity env v | isExternalName (idName v)                    = fromIntegral $
 isTopLvl :: GenEnv -> Id -> Bool
 isTopLvl env v = v `elemVarSet` topLvls env
 
-defaultTyDecls :: [TopLevelThing]
-defaultTyDecls =
-    [ TLTyDef $ Coq_mk_type_decl (Name "hs")    mkClosureTy
-    , TLTyDef $ Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
-    , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
-    , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
-    ]
-
-returnArgDecl :: TopLevelThing
-returnArgDecl =  TLDecl $ mkEnterFunDeclaration
-    LINKAGE_External
-    (Name "rts_returnArg")
-
-returnArgIdent :: Coq_ident
-returnArgIdent = ID_Global (Name "rts_returnArg")
-
 genStaticVal :: GenEnv -> Var -> CoreExpr -> G ()
 genStaticVal env v rhs
     | getIdArity env v == 0

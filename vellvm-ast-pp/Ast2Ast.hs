@@ -2,7 +2,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Ast2Ast (convModule) where
 
-
+import Data.Char
 import Data.Maybe
 
 import qualified Ollvm_ast as O
@@ -89,6 +89,8 @@ instance Conv Coq_value (Type -> Constant) where
         where elems' = [ conv e (conv t) | (t,e) <- elems ]
     conv (SV (OP_Conversion O.Bitcast ty1 o ty2)) _
         = AC.BitCast (conv o (conv ty1)) (conv ty2)
+    conv (SV (VALUE_Cstring str))         _ = AC.Array (IntegerType 8) elems
+        where elems = [ (AC.Int 8 (fromIntegral (ord c))) | c <- str ]
 
 instance Conv (Expr Coq_value) (Type -> Operand) where
     conv (VALUE_Ident (ID_Local  n)) t = LocalReference t (conv n)

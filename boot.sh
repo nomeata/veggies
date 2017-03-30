@@ -35,6 +35,11 @@ ghc -O -package ghc \
     Main.hs \
     -o $dir/libexec/veggies
 
+ghc -O -package ghc \
+    -ivellvm-ast-pp/ \
+    GenPrimOpStubs.hs \
+    -o $dir/libexec/gen-primop-stubs
+
 cat > $dir/bin/veggies <<__END__
 #!/bin/sh
 topdir="$dir"
@@ -45,7 +50,9 @@ chmod +x  $dir/bin/veggies
 
 cd fake-rts
 clang-4.0 -c rts.ll
-ar rcs libHSrts.a rts.o
+$dir/libexec/gen-primop-stubs > primops.ll
+clang-4.0 -c primops.ll
+ar rcs libHSrts.a rts.o primops.o
 mkdir $dir/lib/rts
 cp -v libHSrts.a $dir/lib/rts
 cd ..

@@ -97,26 +97,8 @@ mkIntBoxTy = TYPE_Struct [ enterFunTyP, TYPE_I 64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
-mallocRetTyP = TYPE_Pointer (TYPE_I 8)
-mallocTy = TYPE_Function mallocRetTyP [TYPE_I 64]
-mallocIdent = ID_Global (Name "malloc")
-
 badArityTy = TYPE_Function hsTyP []
 badArityIdent = ID_Global (Name "rts_badArity")
-
-mallocDecl :: TopLevelThing
-mallocDecl = TLDecl $ Coq_mk_declaration
-    (Name "malloc")
-    mallocTy
-    ([],[[]])
-    Nothing
-    Nothing
-    Nothing
-    Nothing
-    []
-    Nothing
-    Nothing
-    Nothing
 
 badArityDecl :: TopLevelThing
 badArityDecl = TLDecl $ Coq_mk_declaration
@@ -197,4 +179,20 @@ closIdent :: Coq_ident
 closIdent = ID_Local closRawId
 closRawId :: Coq_raw_id
 closRawId = Name "clos"
+
+defaultTyDecls :: [TopLevelThing]
+defaultTyDecls =
+    [ TLTyDef $ Coq_mk_type_decl (Name "hs")    mkClosureTy
+    , TLTyDef $ Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
+    , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
+    , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
+    ]
+
+returnArgDecl :: TopLevelThing
+returnArgDecl =  TLDecl $ mkEnterFunDeclaration
+    LINKAGE_External
+    (Name "rts_returnArg")
+
+returnArgIdent :: Coq_ident
+returnArgIdent = ID_Global (Name "rts_returnArg")
 

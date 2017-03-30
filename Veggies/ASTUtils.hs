@@ -43,3 +43,57 @@ getElemPtr :: Coq_typ -> Coq_ident -> [Integer] -> Coq_instr
 getElemPtr t v path
     = INSTR_Op (SV (OP_GetElementPtr t (t, ident v) [(TYPE_I 32, SV (VALUE_Integer n))| n <- path]))
 
+mallocRetTyP = TYPE_Pointer (TYPE_I 8)
+mallocTy = TYPE_Function mallocRetTyP [TYPE_I 64]
+mallocIdent = ID_Global (Name "malloc")
+
+mallocDecl :: TopLevelThing
+mallocDecl = TLDecl $ Coq_mk_declaration
+    (Name "malloc")
+    mallocTy
+    ([],[[]])
+    Nothing
+    Nothing
+    Nothing
+    Nothing
+    []
+    Nothing
+    Nothing
+    Nothing
+
+exitRetTyP = TYPE_Void
+exitTy = TYPE_Function exitRetTyP [TYPE_I 64]
+exitIdent = ID_Global (Name "exit")
+
+exitDecl :: TopLevelThing
+exitDecl = TLDecl $ Coq_mk_declaration
+    (Name "exit")
+    exitTy
+    ([],[[]])
+    Nothing
+    Nothing
+    Nothing
+    Nothing
+    []
+    Nothing
+    Nothing
+    Nothing
+
+putsRetTyP = TYPE_Void
+putsTy = TYPE_Function putsRetTyP [TYPE_Pointer (TYPE_I 8)]
+putsIdent = ID_Global (Name "puts")
+
+putsDecl :: TopLevelThing
+putsDecl = TLDecl $ Coq_mk_declaration
+    (Name "puts")
+    putsTy
+    ([],[[]])
+    Nothing
+    Nothing
+    Nothing
+    Nothing
+    []
+    Nothing
+    Nothing
+    Nothing
+

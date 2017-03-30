@@ -84,7 +84,7 @@ declare i8* @malloc(i64)
 
 @GHCziPrim_zpzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_zpzh_fun, i64 2, [0 x %hs*] zeroinitializer }
 @GHCziPrim_zpzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_zpzh_tmp to %hs*)
-@GHCziPrim_addWordzh = alias %hs, %hs* @GHCziPrim_zpzh
+@GHCziPrim_plusWordzh = alias %hs, %hs* @GHCziPrim_zpzh
 define %hs* @GHCziPrim_zpzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
   %a_cast = bitcast %hs* %a to %int*
   %b_cast = bitcast %hs* %b to %int*
