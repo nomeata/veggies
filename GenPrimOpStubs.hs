@@ -8,6 +8,7 @@ import Ollvm_ast
 import Veggies.GenMonad
 import Veggies.CodeGenTypes
 import Veggies.ASTUtils
+import Veggies.Common
 
 import qualified Ast2Ast as LLVM
 import qualified Ast2Assembly as LLVM
@@ -30,51 +31,117 @@ genPrimVal name = do
             Nothing
   where
     raw_ident = Name ident_str
-    ident_str = intercalate "_" $ map zEncodeString
-        [ "GHC.Prim"
-        , name
-        ]
+    ident_str = primName name Nothing
 
     tmp_ident = Name tmp_str
-    tmp_str = intercalate "_" $ map zEncodeString
+    tmp_str = primName name (Just "tmp")
+
+    val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent) ]
+
+
+voidIdent = ID_Global (Name (primName "void#" Nothing))
+
+primName :: String -> Maybe String -> String
+primName name suffix = intercalate "_" $ map zEncodeString $
+        [ "GHC.Prim", name ] ++ [s | Just s <- return suffix ]
+
+genReturnIO :: Coq_ident -> Coq_ident -> LG Coq_ident
+genReturnIO s x = do
+    dc <- freshLocal
+    let (alloc,fill) = allocateDataCon dc 1 2
+    alloc
+    fill [ s , x ]
+    return (ID_Local dc)
+
+primOpBody :: PrimOp -> LG ()
+primOpBody MakeStablePtrOp = do
+    ret <- genReturnIO (paramIdents !! 1) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody PutMVarOp = do
+    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody NewMVarOp = do
+    ret <- genReturnIO (paramIdents !! 0) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody NewArrayOp = do
+    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody NoDuplicateOp = do
+    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 0))
+
+primOpBody MaskAsyncExceptionsOp = do
+   -- apply first argument to the second argument
+    evaledFun <- genEnterAndEval (paramIdents !! 0)
+    ret <- genFunctionCall evaledFun [(paramIdents !! 1)]
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody MaskStatus = do
+    zero <- liftG $ genIntegerLit 0
+    ret <- genReturnIO (paramIdents !! 0) zero
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody MkWeakNoFinalizerOp = do
+    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody MyThreadIdOp = do
+    ret <- genReturnIO (paramIdents !! 0) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody CatchOp = do
+   -- apply first argument to the third argument
+    evaledFun <- genEnterAndEval (paramIdents !! 0)
+    ret <- genFunctionCall evaledFun [(paramIdents !! 2)]
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody pop = do
+    liftG $ do
+        emitTL $ TLGlobal $ Coq_mk_global
+                str_ident
+                msgTy
+                True
+                (Just (SV (VALUE_Cstring msg)))
+                (Just LINKAGE_Private)
+                Nothing
+                Nothing
+                Nothing
+                False
+                Nothing
+                False
+                Nothing
+                Nothing
+
+    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast msgTy (ident (ID_Global str_ident)) (TYPE_Pointer (TYPE_I 8))))
+    emitInstr $ INSTR_Call (TYPE_Pointer putsTy, putsIdent) [(TYPE_Pointer msgTy, ident casted)]
+    emitInstr $ INSTR_Call (TYPE_Pointer exitTy, exitIdent) [(TYPE_I 64, SV (VALUE_Integer 1))]
+    emitTerm (TERM_Ret (hsTyP, SV VALUE_Null))
+  where
+    str_ident = Name str_str
+    str_str = intercalate "_" $ map zEncodeString
         [ "GHC.Prim"
-        , name
-        , "tmp"
+        , occNameString (primOpOcc pop)
+        , "str"
         ]
 
-    val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent) ]
+    msg = "Unsupported primop " ++ occNameString (primOpOcc pop) ++ "\0"
+    msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
 
 
 genPrimOpStub :: PrimOp -> G ()
 genPrimOpStub pop | arity == 0 = error (occNameString occName)
                   | otherwise  = do
-    blocks <- runLG $ do
-        casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast msgTy (ident (ID_Global str_ident)) (TYPE_Pointer (TYPE_I 8))))
-        emitInstr $ INSTR_Call (TYPE_Pointer putsTy, putsIdent) [(TYPE_Pointer msgTy, ident casted)]
-        emitInstr $ INSTR_Call (TYPE_Pointer exitTy, exitIdent) [(TYPE_I 64, SV (VALUE_Integer 1))]
-        emitTerm (TERM_Ret (hsTyP, SV VALUE_Null))
+    blocks <- runLG $ primOpBody pop
 
     emitTL $ TLDef $ mkHsFunDefinition
         LINKAGE_External
         raw_fun_ident
-        (map Name $ take arity paramNames)
+        (take arity paramRawId)
         0
         blocks
-
-    emitTL $ TLGlobal $ Coq_mk_global
-            str_ident
-            msgTy
-            True
-            (Just (SV (VALUE_Cstring msg)))
-            (Just LINKAGE_Private)
-            Nothing
-            Nothing
-            Nothing
-            False
-            Nothing
-            False
-            Nothing
-            Nothing
 
     emitTL $ TLGlobal $ Coq_mk_global
             tmp_ident
@@ -133,16 +200,6 @@ genPrimOpStub pop | arity == 0 = error (occNameString occName)
         , "tmp"
         ]
 
-    str_ident = Name str_str
-    str_str = intercalate "_" $ map zEncodeString
-        [ "GHC.Prim"
-        , occNameString occName
-        , "str"
-        ]
-
-    msg = "Unsupported primop " ++ occNameString occName ++ "\0"
-    msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
-
 supportedPrimOps :: [PrimOp]
 supportedPrimOps =
     [ IntAddOp
@@ -157,8 +214,10 @@ globals :: G ()
 globals = do
     mapM_ emitTL defaultTyDecls
     emitTL returnArgDecl
+    emitTL badArityDecl
     emitTL exitDecl
     emitTL putsDecl
+    emitTL mallocDecl
 
 primModule :: Coq_modul
 primModule = mkCoqModul "GHC.Prim" toplevels
@@ -168,7 +227,15 @@ primModule = mkCoqModul "GHC.Prim" toplevels
         mapM_ genPrimOpStub (allThePrimOps \\ supportedPrimOps)
         mapM_ genPrimVal ["void#", "realWorld#"]
 
-paramNames = ["p"++show n | n <- [1..]]
+paramStrs :: [String]
+paramStrs = ["p"++show n | n <- [1..]]
+
+paramRawId :: [Coq_raw_id]
+paramRawId = map Name paramStrs
+
+paramIdents :: [Coq_ident]
+paramIdents = map ID_Local paramRawId
+
 
 main = do
     let vellvm_ast = primModule
