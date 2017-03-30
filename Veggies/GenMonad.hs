@@ -17,24 +17,7 @@ import Ollvm_ast
 import Debug.Trace
 import GHC.Stack
 
-
-data TopLevelThing
-    = TLAlias  Coq_alias
-    | TLGlobal Coq_global
-    | TLTyDef  Coq_type_decl
-    | TLDecl   Coq_declaration
-    | TLDef    Coq_definition
-
-mkCoqModul :: String -> [TopLevelThing] -> Coq_modul
-mkCoqModul name top_level_things
-    = Coq_mk_modul name
-        (TLE_Target "x86_64-pc-linux")
-        (TLE_Source_filename "no data layout here")
-        (map ("",) [ x | TLGlobal x <- top_level_things ])
-        (map ("",) [ x | TLTyDef x  <- top_level_things ])
-        (map ("",) [ x | TLDecl x   <- top_level_things ])
-        (map ("",) [ x | TLDef x    <- top_level_things ])
-        (map ("",) [ x | TLAlias x  <- top_level_things ])
+import Veggies.ASTUtils
 
 -- Generating top-level definitions
 type G = WriterT [TopLevelThing] (WriterT [Var] (State Integer))

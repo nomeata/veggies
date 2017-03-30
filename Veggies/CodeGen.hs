@@ -39,6 +39,7 @@ import GHC.Stack
 
 import Veggies.GenMonad
 import Veggies.CodeGenTypes
+import Veggies.ASTUtils
 
 
 data GenEnv = GenEnv

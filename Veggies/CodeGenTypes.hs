@@ -36,12 +36,8 @@ import Ollvm_ast
 
 import Debug.Trace
 import GHC.Stack
-import Veggies.GenMonad (TopLevelThing(..))
+import Veggies.ASTUtils
 
-
-ident id = SV (VALUE_Ident id)
-
-noop ty val = INSTR_Op (SV (OP_Conversion Bitcast ty val ty))
 
 
 mkClosureTy :: Coq_typ
@@ -136,10 +132,6 @@ badArityDecl = TLDecl $ Coq_mk_declaration
     Nothing
     Nothing
 
-
-getElemPtr :: Coq_typ -> Coq_ident -> [Integer] -> Coq_instr
-getElemPtr t v path
-    = INSTR_Op (SV (OP_GetElementPtr t (t, ident v) [(TYPE_I 32, SV (VALUE_Integer n))| n <- path]))
 
 dummyBody :: [Coq_block]
 dummyBody = [ Coq_mk_block (Anon 0)
