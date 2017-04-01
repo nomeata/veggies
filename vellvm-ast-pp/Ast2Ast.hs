@@ -4,6 +4,7 @@ module Ast2Ast (convModule) where
 
 import Data.Char
 import Data.Maybe
+import Data.List
 
 import qualified Ollvm_ast as O
 import Ollvm_ast
@@ -13,6 +14,7 @@ import qualified LLVM.AST.IntegerPredicate as A
 import LLVM.AST
 import LLVM.AST.DataLayout
 import LLVM.AST.Linkage
+import LLVM.AST.Global
 import LLVM.AST.Visibility
 import LLVM.AST.ParameterAttribute
 import LLVM.AST.Type
@@ -34,12 +36,18 @@ instance Conv Coq_modul Module where
            , moduleDataLayout = getDataLayout (m_datalayout m)
            , moduleTargetTriple = getTargetTriple (m_target m)
            , moduleDefinitions =
+                sortOn defName $
                 map (conv . snd) (m_globals m) ++
                 map (conv . snd) (m_type_decls m) ++
                 map (conv . snd) (m_declarations m) ++
                 map (conv . snd) (m_definitions m) ++
                 map (conv . snd) (m_aliases m)
            }
+
+defName :: Definition -> Maybe Name
+defName (GlobalDefinition g) = Just $ name g
+defName (TypeDefinition n _) = Nothing -- need to go first
+defName _ = Nothing
 
 instance Conv Coq_param_attr ParameterAttribute
 
@@ -124,8 +132,8 @@ instance Conv Coq_instr Instruction where
         = A.Store volatile (conv o1) (conv o2) Nothing (maybe 0 fromIntegral mbAlign) []
     conv (INSTR_Load volatile _ o mbAlign)
         = A.Load volatile (conv o) Nothing (maybe 0 fromIntegral mbAlign) []
-    conv (INSTR_Call ti tos)
-        = A.Call Nothing CC.C [] (Right (conv ti)) [ (conv to, []) | to <- tos ] [] []
+    conv (INSTR_Call (t,f) tos)
+        = A.Call Nothing CC.C [] (Right (conv (TYPE_Pointer t,f))) [ (conv to, []) | to <- tos ] [] []
     conv (INSTR_Phi t preds )
         = A.Phi (conv t) [ (LocalReference (conv t) (conv o), conv l)
                          | (ID_Local o,SV (VALUE_Ident (ID_Local l))) <- preds ] []
@@ -206,8 +214,8 @@ instance Conv Coq_alias Definition where
             Nothing -- (Maybe StorageClass)
             Nothing -- (Maybe Model)
             Nothing -- (Maybe UnnamedAddr)
-            (conv a_typ)
-            (conv a_value (conv a_typ))
+            (conv (TYPE_Pointer a_typ))
+            (conv a_value (conv (TYPE_Pointer a_typ)))
 
 
 

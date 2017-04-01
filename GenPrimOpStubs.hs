@@ -47,11 +47,9 @@ primName name suffix = intercalate "_" $ map zEncodeString $
 
 genReturnIO :: Coq_ident -> Coq_ident -> LG Coq_ident
 genReturnIO s x = do
-    dc <- freshLocal
-    let (alloc,fill) = allocateDataCon dc 1 2
-    alloc
+    (dc, fill) <- allocateDataCon 1 2
     fill [ s , x ]
-    return (ID_Local dc)
+    return dc
 
 primOpBody :: PrimOp -> LG ()
 primOpBody MakeStablePtrOp = do
@@ -115,9 +113,9 @@ primOpBody pop = do
                 Nothing
                 Nothing
 
-    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast msgTy (ident (ID_Global str_ident)) (TYPE_Pointer (TYPE_I 8))))
-    emitInstr $ INSTR_Call (TYPE_Pointer putsTy, putsIdent) [(TYPE_Pointer msgTy, ident casted)]
-    emitInstr $ INSTR_Call (TYPE_Pointer exitTy, exitIdent) [(TYPE_I 64, SV (VALUE_Integer 1))]
+    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast msgTyP (ident (ID_Global str_ident)) cStrTy))
+    emitVoidInstr $ INSTR_Call (putsTy, putsIdent) [(cStrTy, ident casted)]
+    emitVoidInstr $ INSTR_Call (exitTy, exitIdent) [(TYPE_I 64, SV (VALUE_Integer 1))]
     emitTerm (TERM_Ret (hsTyP, SV VALUE_Null))
   where
     str_ident = Name str_str
@@ -129,6 +127,8 @@ primOpBody pop = do
 
     msg = "Unsupported primop " ++ occNameString (primOpOcc pop) ++ "\0"
     msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
+    msgTyP = TYPE_Pointer msgTy
+    cStrTy = TYPE_Pointer (TYPE_I 8)
 
 
 genPrimOpStub :: PrimOp -> G ()
@@ -160,8 +160,8 @@ genPrimOpStub pop | arity == 0 = error (occNameString occName)
 
     emitTL $ TLAlias $ Coq_mk_alias
            raw_ident
-           hsTyP
-           (SV (OP_Conversion Bitcast (mkFunClosureTy (fromIntegral arity) 0) (ident (ID_Global tmp_ident)) hsTyP))
+           hsTy
+           (SV (OP_Conversion Bitcast (mkFunClosureTyP (fromIntegral arity) 0) (ident (ID_Global tmp_ident)) hsTyP))
            (Just LINKAGE_External)
            Nothing
            Nothing
@@ -210,20 +210,13 @@ supportedPrimOps =
     , WordMulOp
     ]
 
-globals :: G ()
-globals = do
-    mapM_ emitTL defaultTyDecls
-    emitTL returnArgDecl
-    emitTL badArityDecl
-    emitTL exitDecl
-    emitTL putsDecl
-    emitTL mallocDecl
-
 primModule :: Coq_modul
 primModule = mkCoqModul "GHC.Prim" toplevels
   where
-    (toplevels, []) = runG $ do
-        globals
+    toplevels = runG $ do
+        mapM_ emitTL defaultTyDecls
+        genStaticIntLits
+
         mapM_ genPrimOpStub (allThePrimOps \\ supportedPrimOps)
         mapM_ genPrimVal ["void#", "realWorld#"]
 

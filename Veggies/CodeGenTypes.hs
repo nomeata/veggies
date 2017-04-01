@@ -79,6 +79,7 @@ arityTy = TYPE_I 64
 arityTyP = TYPE_Pointer arityTy
 
 mkDataConTy n = TYPE_Struct [ enterFunTyP, tagTy, TYPE_Array n hsTyP ]
+mkDataConTyP n = TYPE_Pointer (mkDataConTy n)
 
 envTy m = TYPE_Array m hsTyP
 envTyP m = TYPE_Pointer (envTy m)
@@ -89,6 +90,7 @@ mkFunClosureTy n m =
                 , arityTy
                 , envTy m
                 ]
+mkFunClosureTyP n m = TYPE_Pointer (mkFunClosureTy n m)
 
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
@@ -187,11 +189,6 @@ defaultTyDecls =
     , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
     , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
     ]
-
-returnArgDecl :: TopLevelThing
-returnArgDecl =  TLDecl $ mkEnterFunDeclaration
-    LINKAGE_External
-    (Name "rts_returnArg")
 
 returnArgIdent :: Coq_ident
 returnArgIdent = ID_Global (Name "rts_returnArg")

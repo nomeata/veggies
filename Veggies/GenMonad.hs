@@ -7,10 +7,9 @@ import Data.Maybe
 import Data.Bifunctor
 import Control.Arrow ((&&&))
 import Data.Either
+import Data.Function
 import Control.Monad.State
 import Control.Monad.Writer
-
-import Var (Var)
 
 import Ollvm_ast
 
@@ -20,20 +19,19 @@ import GHC.Stack
 import Veggies.ASTUtils
 
 -- Generating top-level definitions
-type G = WriterT [TopLevelThing] (WriterT [Var] (State Integer))
+type G = WriterT [TopLevelThing] (State Integer)
 -- Also generting instructions
 type PartialBlock = (Coq_block_id, [(Coq_instr_id, Coq_instr)])
 type LG = StateT (Maybe PartialBlock) (WriterT [Coq_block] (StateT Integer G))
 
-runG :: G () -> ([TopLevelThing], [Var])
-runG g = evalState (runWriterT (execWriterT g)) 0
+runG :: G () -> [TopLevelThing]
+runG g = addExternalDeclarations $ evalState (execWriterT g) 0
 
 runLG :: LG () -> G ([Coq_block])
 runLG lg = evalStateT (execWriterT (evalStateT lg' Nothing)) 0
   where
     lg' = do
-        firstBlockId <- freshLocal
-        startNamedBlock firstBlockId
+        startNamedBlock (Name "start")
         lg
         ensureNoBlock
 
@@ -48,13 +46,13 @@ liftG :: G a -> LG a
 liftG = lift .  lift . lift
 
 freshGlobal :: G Coq_local_id
-freshGlobal = fmap Anon $ lift $ lift $ state (id &&& (+1))
+freshGlobal = fmap Anon $ lift $ state (id &&& (+1))
 
 freshLocal :: LG Coq_local_id
 freshLocal = fmap Anon $ lift $ state (id &&& (+1))
 
-noteExternalVar :: Var -> G ()
-noteExternalVar v = lift $ tell [v]
+instrNumber :: LG Integer
+instrNumber = lift $ get
 
 emitTL :: TopLevelThing -> G ()
 emitTL tlt = tell [tlt]
@@ -83,11 +81,16 @@ emitInstr instr = do
     emitNamedInstr instrId instr
     return (ID_Local instrId)
 
+emitVoidInstr :: Coq_instr -> LG ()
+emitVoidInstr instr = do
+    modify $ \s -> case s of
+            Nothing -> error $ "No block ot finish"
+            Just (n,instrs) -> Just(n, instrs ++ [(IVoid 0, instr)])
+    return ()
+
 emitNamedInstr :: Coq_local_id -> Coq_instr -> LG ()
 emitNamedInstr instrId instr = do
-    blockId <- freshLocal
-    modify $ \s ->
-        case s of
+    modify $ \s -> case s of
             Nothing -> error $ "No block ot finish"
             Just (n,instrs) -> Just(n, instrs ++ [(IId instrId, instr)])
 

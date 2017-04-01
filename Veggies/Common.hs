@@ -11,29 +11,32 @@ import Veggies.CodeGenTypes
 genEnterAndEval :: Coq_ident -> LG Coq_ident
 genEnterAndEval v = do
     codePtr <- emitInstr $ getElemPtr hsTyP v [0,0]
-    code <- emitInstr $ INSTR_Load False enterFunTyP (enterFunTyP, ident codePtr) Nothing
-    emitInstr $ INSTR_Call (enterFunTyP, code) [(hsTyP, ident v)]
+    code <- emitInstr $ INSTR_Load False enterFunTyP (TYPE_Pointer enterFunTyP, ident codePtr) Nothing
+    emitInstr $ INSTR_Call (enterFunTy, code) [(hsTyP, ident v)]
 
 genFunctionCall :: Coq_ident -> [Coq_ident] -> LG Coq_ident
 genFunctionCall f [] = error $ "genFunctionCall" -- ++ show f
 genFunctionCall evaledFun args_locals = do
     let arity = fromIntegral (length args_locals)
     let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy arity 0)
-    let thisFunTyP = TYPE_Pointer (hsFunTy arity 0)
+    let thisFunTy = hsFunTy arity 0
+    let thisFunTyP = TYPE_Pointer thisFunTy
 
     castedFun <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) thisFunClosTyP))
     funPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
-    fun <- emitInstr $ INSTR_Load False thisFunTyP (thisFunTyP, ident funPtr) Nothing
+    fun <- emitInstr $ INSTR_Load False thisFunTyP (TYPE_Pointer thisFunTyP, ident funPtr) Nothing
 
     arityPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,2]
-    actualArity <- emitInstr $ INSTR_Load False arityTyP (arityTyP, ident arityPtr) Nothing
+    actualArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
 
-    okLabel <- freshLocal
-    okRetLabel <- freshLocal
-    badLabel <- freshLocal
-    badRetLabel <- freshLocal
-    joinLabel <- freshLocal
+    n <- instrNumber
+    let localLabel x = Name $ "if_" ++ show n ++ "_" ++ x
+        okLabel = localLabel "ok"
+        okRetLabel = localLabel "ok_ret"
+        badLabel = localLabel "bad"
+        badRetLabel = localLabel "bad_ret"
+        joinLabel = localLabel "join"
 
     emitTerm $ TERM_Switch (arityTy,ident actualArity) (TYPE_Label, ID_Local badLabel)
         [ ((arityTy, SV (VALUE_Integer arity)), (TYPE_Label, ID_Local okLabel)) ]
@@ -41,7 +44,7 @@ genFunctionCall evaledFun args_locals = do
     startNamedBlock okLabel
     closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
 
-    ret <- emitInstr $ INSTR_Call (thisFunTyP, fun) $
+    ret <- emitInstr $ INSTR_Call (thisFunTy, fun) $
         (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
     namedBr1Block okRetLabel joinLabel
 
@@ -59,37 +62,48 @@ genMalloc t = do
     emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
 
 
-allocateDataCon :: Coq_raw_id -> Integer -> Integer -> (LG (), [Coq_ident] ->  LG ())
-allocateDataCon dcName tag arity = (alloc, fill)
+allocateDataCon :: Integer -> Integer -> (LG (Coq_ident, [Coq_ident] ->  LG ()))
+allocateDataCon tag arity = alloc
   where
     alloc = do
         dcRawPtr <- genMalloc thisDataConTyP
-        emitNamedInstr dcName $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTyP (ident dcRawPtr) hsTyP))
+        dc <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident dcRawPtr) hsTyP))
+        return (dc, fill dc)
 
-    fill args = do
-        let dcClosure = ID_Local dcName
+    fill dcClosure args = do
         dcCasted <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dcClosure) thisDataConTyP))
 
         codePtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,0]
-        emitInstr $ INSTR_Store False (enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
 
         tagPtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,1]
-        emitInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, SV (VALUE_Integer tag)) Nothing
+        emitVoidInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, SV (VALUE_Integer tag)) Nothing
 
         forM_ (zip [0..] args) $ \(n, arg) -> do
             p <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,2,n]
-            emitInstr $ INSTR_Store False (hsTyP, ident p) (hsTyP, ident arg) Nothing
+            emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident p) (hsTyP, ident arg) Nothing
 
     thisDataConTy = mkDataConTy arity
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
 
+staticIntLits :: [(Integer, String)]
+staticIntLits = [ (n, "static_int_" ++ show n) | n <- [0,1] ]
+
+genStaticIntLits :: G ()
+genStaticIntLits = sequence_ [ genIntegerLitForReal n (Name name) | (n,name) <- staticIntLits ]
+
 genIntegerLit :: Integer -> G Coq_ident
+genIntegerLit l | Just n <- lookup l staticIntLits = return $ ID_Global (Name n)
 genIntegerLit l = do
-    litNameTmp <- freshGlobal
     litName <- freshGlobal
+    genIntegerLitForReal l litName
+    return (ID_Global litName)
+
+genIntegerLitForReal l litName = do
+    litNameTmp <- freshGlobal
 
     let val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                                 , (TYPE_I 64, SV (VALUE_Integer (fromIntegral l)))
@@ -111,12 +125,11 @@ genIntegerLit l = do
          Nothing
     emitTL $ TLAlias $ Coq_mk_alias
          litName
-         hsTyP
-         (SV (OP_Conversion Bitcast intBoxTy (ident (ID_Global litNameTmp)) hsTyP))
+         hsTy
+         (SV (OP_Conversion Bitcast intBoxTyP (ident (ID_Global litNameTmp)) hsTyP))
          (Just LINKAGE_Private)
          Nothing
          Nothing
          Nothing
          False
-
-    return $ ID_Global litName
+    return ()
