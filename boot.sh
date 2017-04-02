@@ -68,7 +68,7 @@ ghc-pkg --package-db $dir/package.conf.d recache
 echo "Building ghc-prim"
 cd ghc-prim/
 ghc --make Setup.hs
-./Setup configure --builddir $dir/dist/prim --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
+./Setup configure --builddir $dir/dist/prim --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir --disable-library-stripping --ghc-option=-keep-llvm-files --ghc-option=-ddump-prep --ghc-option=-ddump-to-file
 ./Setup build --builddir $dir/dist/prim
 ./Setup install --builddir $dir/dist/prim
 cd ..
@@ -79,7 +79,7 @@ ghc-pkg --package-db $dir/package.conf.d recache
 echo "Building integer-gmp"
 cd integer-gmp
 ghc --make Setup.hs
-./Setup configure --builddir $dir/dist/integer-gmp --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir
+./Setup configure --builddir $dir/dist/integer-gmp --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir --disable-library-stripping --ghc-option=-keep-llvm-files --ghc-option=-ddump-prep --ghc-option=-ddump-to-file
 ./Setup build     --builddir $dir/dist/integer-gmp
 ./Setup install   --builddir $dir/dist/integer-gmp
 cd ..
@@ -87,7 +87,7 @@ cd ..
 echo "Building base"
 ghc --make base/Setup.hs
 cd base
-./Setup configure --builddir $dir/dist/base --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir -finteger-gmp
+./Setup configure --builddir $dir/dist/base --package-db=$dir/package.conf.d -w $dir/bin/veggies --prefix $dir -finteger-gmp --disable-library-stripping --ghc-option=-keep-llvm-files --ghc-option=-ddump-prep --ghc-option=-ddump-to-file
 ./Setup build     --builddir $dir/dist/base
 ./Setup install   --builddir $dir/dist/base
 cd ..
