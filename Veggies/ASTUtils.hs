@@ -83,6 +83,35 @@ putsRetTy = TYPE_Void
 putsTy = TYPE_Function putsRetTy [TYPE_Pointer (TYPE_I 8)]
 putsIdent = ID_Global (Name "puts")
 
+mkAliasedGlobal linkage name tmpName exportedTy realTy val =
+    [ TLGlobal $ Coq_mk_global
+        tmpName
+        realTy
+        True
+        (Just val)
+        (Just LINKAGE_Private)
+        Nothing
+        Nothing
+        Nothing
+        False
+        Nothing
+        False
+        Nothing
+        Nothing
+    , TLAlias $ Coq_mk_alias
+        name
+        exportedTy
+        (SV (OP_Conversion Bitcast (TYPE_Pointer realTy)
+                                   (ident (ID_Global tmpName))
+                                   (TYPE_Pointer exportedTy)))
+        (Just linkage)
+        Nothing
+        Nothing
+        Nothing
+        False
+    ]
+
+
 mkExternalDecl :: String -> Coq_typ -> TopLevelThing
 mkExternalDecl n (TYPE_Pointer (t@(TYPE_Function _ argsTy)))
     = TLDecl $ Coq_mk_declaration

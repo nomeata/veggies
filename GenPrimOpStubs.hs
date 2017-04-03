@@ -120,47 +120,17 @@ mkPrimFun name arity body = do
         0
         blocks
 
-    emitTL $ TLGlobal $ Coq_mk_global
-            tmp_ident
-            (mkFunClosureTy (fromIntegral arity) 0)
-            True -- constant
-            (Just val)
-            (Just LINKAGE_Private)
-            Nothing
-            Nothing
-            Nothing
-            False
-            Nothing
-            False
-            Nothing
-            Nothing
+    emitAliasedGlobal LINKAGE_External (Name name) hsTy (mkFunClosureTy arity' 0) $
+        SV $ VALUE_Struct [ (enterFunTyP,                      ident returnArgIdent)
+                          , (TYPE_Pointer (hsFunTy arity' 0) , ident (ID_Global raw_fun_ident))
+                          , (TYPE_I 64,                        SV (VALUE_Integer arity'))
+                          , (envTy 0,                          SV (VALUE_Array []))
+                          ]
 
-    emitTL $ TLAlias $ Coq_mk_alias
-           raw_ident
-           hsTy
-           (SV (OP_Conversion Bitcast (mkFunClosureTyP (fromIntegral arity) 0) (ident (ID_Global tmp_ident)) hsTyP))
-           (Just LINKAGE_External)
-           Nothing
-           Nothing
-           Nothing
-           False
 
   where
-    val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
-                           , (TYPE_Pointer (hsFunTy arity' 0) , ident (ID_Global raw_fun_ident))
-
-                           , (TYPE_I 64, SV (VALUE_Integer arity'))
-                           , (envTy 0 , SV (VALUE_Array []))
-                           ]
-
-
     arity' = fromIntegral arity
-    raw_fun_ident = Name ident_fun_str
-    ident_fun_str = name ++ "_fun"
-
-    raw_ident = Name name
-    tmp_ident = Name tmp_str
-    tmp_str = name ++ "_tmp"
+    raw_fun_ident = Name $ name ++ "_fun"
 
 genPrimOp :: PrimOp -> G ()
 genPrimOp pop | arity == 0 = error (occNameString (primOpOcc pop))

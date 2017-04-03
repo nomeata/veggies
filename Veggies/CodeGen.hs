@@ -82,34 +82,12 @@ genStaticVal :: GenEnv -> Var -> CoreExpr -> G ()
 genStaticVal env v rhs
     | getIdArity env v == 0
     , Just dc <- isDataConId_maybe v
-    = do
-    let val = SV $VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
-                               , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
-                               , (envTy 0 , SV (VALUE_Array []))
-                               ]
-    emitTL $ TLGlobal $ Coq_mk_global
-           (varRawIdTmp v)
-           (mkDataConTy 0) --hsTyP
-           True -- constant
-           (Just val)
-           (Just LINKAGE_Private)
-           Nothing
-           Nothing
-           Nothing
-           False
-           Nothing
-           False
-           Nothing
-           Nothing
-    emitTL $ TLAlias $ Coq_mk_alias
-           (varRawId v)
-           hsTy
-           (SV (OP_Conversion Bitcast (mkDataConTyP 0) (ident (ID_Global (varRawIdTmp v))) hsTyP))
-           (Just LINKAGE_External)
-           Nothing
-           Nothing
-           Nothing
-           False
+    = emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkDataConTy 0) $
+        SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                          , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
+                          , (envTy 0 , SV (VALUE_Array []))
+                          ]
+
 
 -- A top-level data con application
 genStaticVal env v rhs
@@ -120,36 +98,14 @@ genStaticVal env v rhs
     = do
     args_idents <- map (hsTyP,) <$> mapM genStaticArg val_args
     let arity = fromIntegral (length args_idents)
-        val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
-                                , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
-                                , (envTy arity , SV (VALUE_Array args_idents))
-                                ]
     unless (arity == fromIntegral (dataConRepArity dc)) $ do
            pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr (fromIntegral arity::Int)) (return ())
 
-    emitTL $ TLGlobal $ Coq_mk_global
-         (varRawIdTmp v)
-         (mkDataConTy arity) --hsTyP
-         True -- constant
-         (Just val)
-         (Just LINKAGE_Private)
-         Nothing
-         Nothing
-         Nothing
-         False
-         Nothing
-         False
-         Nothing
-         Nothing
-    emitTL $ TLAlias $ Coq_mk_alias
-         (varRawId v)
-         hsTy
-         (SV (OP_Conversion Bitcast (mkDataConTyP arity) (ident (ID_Global (varRawIdTmp v))) hsTyP))
-         (Just LINKAGE_External)
-         Nothing
-         Nothing
-         Nothing
-         False
+    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkDataConTy arity) $
+        SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                          , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
+                          , (envTy arity , SV (VALUE_Array args_idents))
+                          ]
   where
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
 
@@ -184,37 +140,15 @@ genStaticVal env v rhs
 -- A top-level function
 genStaticVal env v rhs | exprIsHNF rhs = do
     genTopLvlFunction env v rhs
-    emitTL $ TLGlobal $ Coq_mk_global
-            (varRawIdTmp v)
-            (mkFunClosureTy arity 0) --hsTyP
-            True -- constant
-            (Just val)
-            (Just LINKAGE_Private)
-            Nothing
-            Nothing
-            Nothing
-            False
-            Nothing
-            False
-            Nothing
-            Nothing
-    emitTL $ TLAlias $ Coq_mk_alias
-            (varRawId v)
-            hsTy
-            (SV (OP_Conversion Bitcast (mkFunClosureTyP arity 0) (ident (ID_Global (varRawIdTmp v))) hsTyP))
-            (Just LINKAGE_External)
-            Nothing
-            Nothing
-            Nothing
-            False
+
+    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkFunClosureTy arity 0) $
+        SV $ VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
+                          , (TYPE_Pointer (hsFunTy arity 0) , ident (funIdent env v))
+                          , (TYPE_I 64, SV (VALUE_Integer arity))
+                          , (envTy 0 , SV (VALUE_Array []))
+                          ]
   where
     arity = getIdArity env v
-    val = SV $VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
-                           , (TYPE_Pointer (hsFunTy arity 0) , ident (funIdent env v))
-
-                           , (TYPE_I 64, SV (VALUE_Integer arity))
-                           , (envTy 0 , SV (VALUE_Array []))
-                      ]
 
 -- A static thunk
 genStaticVal env v rhs = do
@@ -226,33 +160,10 @@ genStaticVal env v rhs = do
         LINKAGE_Internal
         (funRawId v)
         blocks
-    emitTL $ TLGlobal $ Coq_mk_global
-            (varRawIdTmp v)
-            (mkThunkTy 0)
-            True -- constant
-            (Just val)
-            (Just LINKAGE_Private)
-            Nothing
-            Nothing
-            Nothing
-            False
-            Nothing
-            False
-            Nothing
-            Nothing
-    emitTL $ TLAlias $ Coq_mk_alias
-            (varRawId v)
-            hsTy
-            (SV (OP_Conversion Bitcast (TYPE_Pointer (mkThunkTy 0)) (ident (ID_Global (varRawIdTmp v))) hsTyP))
-            (Just LINKAGE_External)
-            Nothing
-            Nothing
-            Nothing
-            False
-  where
-    val = SV $ VALUE_Struct [ (enterFunTyP, ident (funIdent env v))
-                            , (envTy 0,     mkThunkArray [])
-                            ]
+    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkThunkTy 0) $
+        SV $ VALUE_Struct [ (enterFunTyP, ident (funIdent env v))
+                          , (envTy 0,     mkThunkArray [])
+                          ]
 
 genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> G ()
 genTopLvlFunction env v rhs

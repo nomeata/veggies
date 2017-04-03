@@ -54,8 +54,15 @@ freshLocal = fmap Anon $ lift $ state (id &&& (+1))
 instrNumber :: LG Integer
 instrNumber = lift $ get
 
+emitTLs :: [TopLevelThing] -> G ()
+emitTLs tlts = tell tlts
+
 emitTL :: TopLevelThing -> G ()
 emitTL tlt = tell [tlt]
+
+emitAliasedGlobal linkage name exportedTy realTy val = do
+    tmpName <- freshGlobal
+    emitTLs $ mkAliasedGlobal linkage name tmpName exportedTy realTy val
 
 emitTerm :: Coq_terminator -> LG ()
 emitTerm t = do
