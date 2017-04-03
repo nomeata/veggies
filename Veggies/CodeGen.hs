@@ -156,6 +156,8 @@ genStaticVal env v rhs
     getStaticArg :: CoreExpr -> Maybe CoreExpr
     getStaticArg (Cast e _)              = getStaticArg e
     getStaticArg (App e a) | isTyCoArg a = getStaticArg e
+    getStaticArg (Lam v e) | not (isId v) = getStaticArg e
+    getStaticArg (Case e _ _ [])         = getStaticArg e -- See Note [Empty case is trivial]
     getStaticArg (Var v)                 = Just (Var v)
     getStaticArg (Lit l)                 = Just (Lit l)
     getStaticArg _                       = Nothing
@@ -461,6 +463,7 @@ genArg :: GenEnv -> CoreArg -> LG Coq_ident
 genArg env (Cast e _)               = genArg env e
 genArg env (App e a) | isTyCoArg a  = genArg env e
 genArg env (Lam v e) | not (isId v) = genArg env e
+genArg env (Case e _ _ [])          = genArg env e -- See Note [Empty case is trivial]
 genArg env (Var v) = do
     return $ varIdent env v
 genArg env (Lit (MachInt l)) = do
