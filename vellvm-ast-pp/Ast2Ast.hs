@@ -128,6 +128,8 @@ instance Conv Coq_instr Instruction where
         = A.BitCast (conv (ty1, o)) (conv ty2) []
     conv (INSTR_Op (SV (OP_Conversion O.Ptrtoint ty1 o ty2)))
         = A.PtrToInt (conv (ty1, o)) (conv ty2) []
+    conv (INSTR_Op (SV (OP_Conversion O.Zext ty1 o ty2)))
+        = A.ZExt (conv (ty1, o)) (conv ty2) []
     conv (INSTR_Store volatile o1 o2 mbAlign)
         = A.Store volatile (conv o1) (conv o2) Nothing (maybe 0 fromIntegral mbAlign) []
     conv (INSTR_Load volatile _ o mbAlign)

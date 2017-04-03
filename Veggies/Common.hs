@@ -90,6 +90,33 @@ allocateDataCon tag arity = alloc
     thisDataConTy = mkDataConTy arity
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
+boxPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> LG Coq_ident
+boxPrimValue valTy boxTy v = do
+    boxRawPtr <- genMalloc boxTyP
+
+    casted <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident boxRawPtr) boxTyP))
+
+    codePtr <- emitInstr $ getElemPtr boxTy casted [0,0]
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
+
+    valPtr <- emitInstr $ getElemPtr boxTy casted [0,1]
+    emitVoidInstr $ INSTR_Store False (valTyP, ident valPtr) (valTy, ident v) Nothing
+
+    box <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident boxRawPtr) hsTyP))
+    return box
+  where boxTyP = TYPE_Pointer boxTy
+        valTyP = TYPE_Pointer valTy
+
+unboxPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> LG Coq_ident
+unboxPrimValue valTy boxTy v = do
+    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident v) boxTyP))
+    valPtr <- emitInstr $ getElemPtr boxTy casted [0,1]
+    emitInstr $ INSTR_Load False valTy (valTyP, ident valPtr) Nothing
+  where boxTyP = TYPE_Pointer boxTy
+        valTyP = TYPE_Pointer valTy
+
 
 staticIntLits :: [(Integer, String)]
 staticIntLits = [ (n, "static_int_" ++ show n) | n <- [0,1] ]

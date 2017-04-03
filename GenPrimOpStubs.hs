@@ -57,10 +57,57 @@ genReturnIO s x = do
     fill [ s , x ]
     return dc
 
+genUnboxedUnitTuple :: Coq_ident -> LG Coq_ident
+genUnboxedUnitTuple x = do
+    (dc, fill) <- allocateDataCon 1 1
+    fill [ x ]
+    return dc
+
+
 primOpBody :: PrimOp -> Maybe (LG ())
-primOpBody MakeStablePtrOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 1) nullPtrBoxIdent
+primOpBody TagToEnumOp = Just $ do
+    tag <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
+    tag' <- emitInstr $
+            INSTR_Op (SV (OP_IBinop (Add False False) i64 (ident tag) (SV (VALUE_Integer 1))))
+
+    dcRawPtr <- genMalloc thisDataConTyP
+    dc <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident dcRawPtr) hsTyP))
+
+    dcCasted <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dc) thisDataConTyP))
+
+    codePtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,0]
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
+
+    tagPtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,1]
+    emitVoidInstr $ INSTR_Store False (tagTyP, ident tagPtr) (tagTy, ident tag') Nothing
+
+    emitTerm $ TERM_Ret (hsTyP, ident dc)
+  where
+    thisDataConTy = mkDataConTy 0
+    thisDataConTyP = TYPE_Pointer thisDataConTy
+
+primOpBody AddrEqOp = Just $ do
+    ptr1 <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    ptr2 <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 1)
+    ptr1' <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint ptrTy (ident ptr1) i64))
+    ptr2' <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint ptrTy (ident ptr2) i64))
+    res <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident ptr1') (ident ptr2')))
+    resInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext (TYPE_I 1) (ident res) i64))
+    ret <- boxPrimValue i64 intBoxTy resInt
     emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody MakeStablePtrOp = Just $ do
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
+    res <- boxPrimValue ptrTy ptrBoxTy ptr
+    ret <- genReturnIO (paramIdents !! 1) res
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody DeRefStablePtrOp = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
+    emitTerm $ TERM_Ret (hsTyP, ident casted)
 
 primOpBody PutMVarOp = Just $ do
     ret <- genReturnIO (paramIdents !! 2) voidIdent
@@ -104,12 +151,18 @@ primOpBody CatchOp = Just $ do
 
 primOpBody _ = Nothing
 
+withArity :: Int -> a -> Maybe (Int, a)
+withArity a x = Just (a,x)
+
 ffiBody :: String -> Maybe (Int, LG ())
 ffiBody "ffi_getOrSetGHCConcSignalSignalHandlerStore"
-    = Just (2, do
+    = withArity 2 $ do
         ret <- genReturnIO (paramIdents !! 1) (paramIdents !! 0)
         emitTerm $ TERM_Ret (hsTyP, ident ret)
-      )
+ffiBody "ffi_hs_free_stable_ptr"
+    = withArity 2 $ do
+        ret <- genUnboxedUnitTuple (paramIdents !! 1)
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
 ffiBody _ = Nothing
 
 

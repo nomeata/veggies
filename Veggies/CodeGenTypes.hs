@@ -95,7 +95,8 @@ mkFunClosureTyP n m = TYPE_Pointer (mkFunClosureTy n m)
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
 
-mkIntBoxTy = TYPE_Struct [ enterFunTyP, TYPE_I 64 ]
+i64 = TYPE_I 64
+mkIntBoxTy = TYPE_Struct [ enterFunTyP, i64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
