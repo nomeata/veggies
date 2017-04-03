@@ -128,8 +128,7 @@ genStaticVal env v rhs
         lit <- genIntegerLit l
         return (ident lit)
     genStaticArg (Lit MachNullAddr) = do
-        lit <- genIntegerLit 0
-        return (ident lit)
+        return (ident nullPtrBoxIdent)
     genStaticArg (Lit l) =
         pprTrace "getStaticArg" (ppr l) $
         return $ SV (VALUE_Null)
@@ -360,7 +359,7 @@ genExpr env (Lit (MachWord l)) = do
     liftG $ genIntegerLit l
 
 genExpr env (Lit MachNullAddr) = do
-    liftG $ genIntegerLit 0
+    return nullPtrBoxIdent
 
 genExpr env (Lam {}) =
     pprTrace "genExpr" (text "lambda") $
@@ -382,7 +381,7 @@ genArg env (Lit (MachInt l)) = do
 genArg env (Lit (MachWord l)) = do
     liftG $ genIntegerLit l
 genArg env (Lit MachNullAddr) = do
-    liftG $ genIntegerLit 0
+    return nullPtrBoxIdent
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
 

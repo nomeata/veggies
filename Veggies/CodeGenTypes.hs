@@ -99,9 +99,13 @@ mkIntBoxTy = TYPE_Struct [ enterFunTyP, TYPE_I 64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
-mkPtrBoxTy = TYPE_Struct [ enterFunTyP, TYPE_Pointer (TYPE_I 8) ]
+ptrTy = TYPE_Pointer (TYPE_I 8)
+mkPtrBoxTy = TYPE_Struct [ enterFunTyP, ptrTy ]
 ptrBoxTy = TYPE_Identified (ID_Global (Name "ptr"))
 ptrBoxTyP = TYPE_Pointer ptrBoxTy
+
+nullPtrBoxRawId = Name "rts_null_ptr_box"
+nullPtrBoxIdent = ID_Global nullPtrBoxRawId
 
 badArityTy = TYPE_Function hsTyP []
 badArityIdent = ID_Global (Name "rts_badArity")

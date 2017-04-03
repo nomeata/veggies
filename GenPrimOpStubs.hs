@@ -13,6 +13,11 @@ import Veggies.Common
 import qualified Ast2Ast as LLVM
 import qualified Ast2Assembly as LLVM
 
+genNullPtrBox :: G ()
+genNullPtrBox = emitAliasedGlobal LINKAGE_External nullPtrBoxRawId hsTy ptrBoxTy $
+        SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                          , (ptrTy,       SV VALUE_Null) ]
+
 
 genPrimVal :: String -> G ()
 genPrimVal name = do
@@ -54,7 +59,7 @@ genReturnIO s x = do
 
 primOpBody :: PrimOp -> Maybe (LG ())
 primOpBody MakeStablePtrOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 1) voidIdent
+    ret <- genReturnIO (paramIdents !! 1) nullPtrBoxIdent
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody PutMVarOp = Just $ do
@@ -160,15 +165,14 @@ supportedPrimOps =
     ]
 
 primModule :: Coq_modul
-primModule = mkCoqModul "GHC.Prim" toplevels
-  where
-    toplevels = runG $ do
-        mapM_ emitTL defaultTyDecls
-        genStaticIntLits
+primModule = mkCoqModul "GHC.Prim" $ runG $ do
+    mapM_ emitTL defaultTyDecls
+    genStaticIntLits
+    genNullPtrBox
 
-        mapM_ genPrimOp (allThePrimOps \\ supportedPrimOps)
-        mapM_ genPrimVal ["void#", "realWorld#", "proxy#"]
-        mapM_ genFFIFunc ffi_fuction_calls
+    mapM_ genPrimOp (allThePrimOps \\ supportedPrimOps)
+    mapM_ genPrimVal ["void#", "realWorld#", "proxy#"]
+    mapM_ genFFIFunc ffi_fuction_calls
 
 paramStrs :: [String]
 paramStrs = ["p"++show n | n <- [1..]]
