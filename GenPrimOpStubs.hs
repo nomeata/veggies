@@ -20,30 +20,9 @@ genNullPtrBox = emitAliasedGlobal LINKAGE_External nullPtrBoxRawId hsTy ptrBoxTy
 
 
 genPrimVal :: String -> G ()
-genPrimVal name = do
-    emitTL $ TLGlobal $ Coq_mk_global
-            raw_ident
-            hsTy
-            True -- constant
-            (Just val)
-            (Just LINKAGE_External)
-            Nothing
-            Nothing
-            Nothing
-            False
-            Nothing
-            False
-            Nothing
-            Nothing
-  where
-    raw_ident = Name ident_str
-    ident_str = primName name Nothing
-
-    tmp_ident = Name tmp_str
-    tmp_str = primName name (Just "tmp")
-
-    val = SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent) ]
-
+genPrimVal name =
+    genPrintAndExitClosure (primName name Nothing) $
+        "entered primitive value" ++ name
 
 voidIdent = ID_Global (Name (primName "void#" Nothing))
 
