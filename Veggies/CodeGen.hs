@@ -253,17 +253,16 @@ collectMoreValBinders = go []
     go ids body               = (reverse ids, body)
 
 genExpr :: GenEnv -> CoreExpr -> LG Coq_ident
-genExpr env (App e a) | isTypeArg a = genExpr env e 
-
+genExpr env (Lam v e) | not (isId v) = genExpr env e
+genExpr env (App e a) | isTypeArg a = genExpr env e
 genExpr env (Cast e _) = genExpr env e
+genExpr env (Case scrut _ _ []) = genExpr env scrut
 
 genExpr env (Case scrut b _ [(DEFAULT, _, body)]) = do
     scrut_eval <- genExpr env scrut
     emitNamedInstr (varRawId b) $ noop hsTyP (ident scrut_eval)
     genExpr env body
 
-genExpr env (Case scrut _ _ []) = do
-    genExpr env scrut
 
 genExpr env (Case scrut b _ alts) = do
     scrut_eval <- genExpr env scrut
