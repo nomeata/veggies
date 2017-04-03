@@ -271,15 +271,19 @@ genExpr env (Case scrut b _ alts) = do
 
     emitNamedInstr scrut_cast_raw_id $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident scrut_eval) scrut_cast_tyP))
 
-    tagPtr <- emitInstr $ getElemPtr scrut_cast_tyP scrut_cast_ident [0,1]
-    t <- emitInstr $ INSTR_Load False tagTy (tagTyP, ident tagPtr) Nothing
+    case alts of
+        [(_, pats, rhs)] ->
+            genAltBody pats rhs
+        _ -> do
+            tagPtr <- emitInstr $ getElemPtr scrut_cast_tyP scrut_cast_ident [0,1]
+            t <- emitInstr $ INSTR_Load False tagTy (tagTyP, ident tagPtr) Nothing
 
-    emitTerm $ tagSwitch t [ (tagOf ac, caseAltEntryRawId b (tagOf ac))
-                           | (ac, _, _) <- alts ]
+            emitTerm $ tagSwitch t [ (tagOf ac, caseAltEntryRawId b (tagOf ac))
+                                   | (ac, _, _) <- alts ]
 
-    phiArgs <- mapM genAlt alts
+            phiArgs <- mapM genAlt alts
 
-    namedPhiBlock hsTyP (caseAltJoinRawId b) phiArgs
+            namedPhiBlock hsTyP (caseAltJoinRawId b) phiArgs
   where
     scrut_cast_tyP | intPrimTy `eqType` idType b = intBoxTyP
                    | otherwise                   = dataConTyP
@@ -300,14 +304,16 @@ genExpr env (Case scrut b _ alts) = do
 
     genAlt (ac, pats, rhs) = do
         startNamedBlock (caseAltEntryRawId b (tagOf ac))
+        ret <- genAltBody pats rhs
+        namedBr1Block (caseAltExitRawId b (tagOf ac)) (caseAltJoinRawId b)
+        return (ret, caseAltExitRawId b (tagOf ac))
+
+    genAltBody pats rhs = do
         forM_ (zip [0..] (filter isId pats)) $ \(n,pat) -> do
             patPtr <- emitInstr $ getElemPtr dataConTyP scrut_cast_ident [0,2,n]
             emitNamedInstr (varRawId pat) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident patPtr) Nothing
 
-        ret <- genExpr env rhs
-        namedBr1Block (caseAltExitRawId b (tagOf ac)) (caseAltJoinRawId b)
-
-        return (ret, caseAltExitRawId b (tagOf ac))
+        genExpr env rhs
 
 genExpr env (Let binds body) = do
     fills <- sequence [ genLetBind env v e | (v,e) <- flattenBinds [binds] ]
