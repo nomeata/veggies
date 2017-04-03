@@ -99,6 +99,10 @@ mkIntBoxTy = TYPE_Struct [ enterFunTyP, TYPE_I 64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
+mkPtrBoxTy = TYPE_Struct [ enterFunTyP, TYPE_Pointer (TYPE_I 8) ]
+ptrBoxTy = TYPE_Identified (ID_Global (Name "ptr"))
+ptrBoxTyP = TYPE_Pointer ptrBoxTy
+
 badArityTy = TYPE_Function hsTyP []
 badArityIdent = ID_Global (Name "rts_badArity")
 
@@ -188,6 +192,7 @@ defaultTyDecls =
     , TLTyDef $ Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
     , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
     , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
+    , TLTyDef $ Coq_mk_type_decl (Name "ptr")   mkPtrBoxTy
     , TLTyDef $ Coq_mk_type_decl (Name "printAndExitClosure") mkPrintAndExitClosureTy
     ]
 

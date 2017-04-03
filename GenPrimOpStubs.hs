@@ -14,10 +14,6 @@ import qualified Ast2Ast as LLVM
 import qualified Ast2Assembly as LLVM
 
 
-genFFIFunc :: String -> G ()
-genFFIFunc name = genPrintAndExitClosure name msg
-  where msg = "Unsupported ffi call " ++ name ++ "\0"
-
 genPrimVal :: String -> G ()
 genPrimVal name = do
     emitTL $ TLGlobal $ Coq_mk_global
@@ -103,10 +99,18 @@ primOpBody CatchOp = Just $ do
 
 primOpBody _ = Nothing
 
+ffiBody :: String -> Maybe (Int, LG ())
+ffiBody "ffi_getOrSetGHCConcSignalSignalHandlerStore"
+    = Just (2, do
+        ret <- genReturnIO (paramIdents !! 1) (paramIdents !! 0)
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
+      )
+ffiBody _ = Nothing
 
-genPrimOp :: PrimOp -> G ()
-genPrimOp pop | arity == 0 = error (occNameString occName)
-              | Just body <- primOpBody pop = do
+
+
+mkPrimFun :: String -> Int -> LG () -> G ()
+mkPrimFun name arity body = do
     blocks <- runLG body
 
     emitTL $ TLDef $ mkHsFunDefinition
@@ -118,7 +122,7 @@ genPrimOp pop | arity == 0 = error (occNameString occName)
 
     emitTL $ TLGlobal $ Coq_mk_global
             tmp_ident
-            (mkFunClosureTy (fromIntegral arity) 0) --hsTyP
+            (mkFunClosureTy (fromIntegral arity) 0)
             True -- constant
             (Just val)
             (Just LINKAGE_Private)
@@ -150,37 +154,30 @@ genPrimOp pop | arity == 0 = error (occNameString occName)
                            ]
 
 
-    (_, _, _, arity, _) =  primOpSig pop
     arity' = fromIntegral arity
-    occName = primOpOcc pop
     raw_fun_ident = Name ident_fun_str
-    ident_fun_str = intercalate "_" $ map zEncodeString
-        [ "GHC.Prim"
-        , occNameString occName
-        , "fun"
-        ]
+    ident_fun_str = name ++ "_fun"
 
-    raw_ident = Name ident_str
-    ident_str = intercalate "_" $ map zEncodeString
-        [ "GHC.Prim"
-        , occNameString occName
-        ]
-
+    raw_ident = Name name
     tmp_ident = Name tmp_str
-    tmp_str = intercalate "_" $ map zEncodeString
-        [ "GHC.Prim"
-        , occNameString occName
-        , "tmp"
-        ]
-genPrimOp pop = genPrintAndExitClosure name msg
+    tmp_str = name ++ "_tmp"
+
+genPrimOp :: PrimOp -> G ()
+genPrimOp pop | arity == 0 = error (occNameString (primOpOcc pop))
+              | Just body <- primOpBody pop = mkPrimFun name arity body
+              | otherwise = genPrintAndExitClosure name msg
   where
+    (_, _, _, arity, _) =  primOpSig pop
     name = intercalate "_" $ map zEncodeString
         [ "GHC.Prim"
         , occNameString (primOpOcc pop)
         ]
-
     msg = "Unsupported primop " ++ occNameString (primOpOcc pop) ++ "\0"
 
+genFFIFunc :: String -> G ()
+genFFIFunc name | Just (arity, body) <- ffiBody name = mkPrimFun name arity body
+                | otherwise = genPrintAndExitClosure name msg
+  where msg = "Unsupported ffi call " ++ name ++ "\0"
 
 supportedPrimOps :: [PrimOp]
 supportedPrimOps =
