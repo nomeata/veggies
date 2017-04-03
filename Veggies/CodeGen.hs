@@ -127,6 +127,9 @@ genStaticVal env v rhs
     genStaticArg (Lit (MachWord l)) = do
         lit <- genIntegerLit l
         return (ident lit)
+    genStaticArg (Lit (MachStr s)) = do
+        lit <- genByteStringLit s
+        return (ident lit)
     genStaticArg (Lit MachNullAddr) = do
         return (ident nullPtrBoxIdent)
     genStaticArg (Lit l) =
@@ -358,6 +361,9 @@ genExpr env (Lit (MachInt l)) = do
 genExpr env (Lit (MachWord l)) = do
     liftG $ genIntegerLit l
 
+genExpr env (Lit (MachStr s)) = do
+    liftG $ genByteStringLit s
+
 genExpr env (Lit MachNullAddr) = do
     return nullPtrBoxIdent
 
@@ -380,6 +386,8 @@ genArg env (Lit (MachInt l)) = do
     liftG $ genIntegerLit l
 genArg env (Lit (MachWord l)) = do
     liftG $ genIntegerLit l
+genArg env (Lit (MachStr s)) = do
+    liftG $ genByteStringLit s
 genArg env (Lit MachNullAddr) = do
     return nullPtrBoxIdent
 genArg env e = pprTrace "genArg" (ppr e) $

@@ -1,5 +1,7 @@
 module Veggies.Common where
 
+import qualified Data.ByteString.Char8 as B
+
 import Control.Monad
 
 import Ollvm_ast
@@ -109,6 +111,38 @@ genIntegerLitForReal l litName = do
                           ]
 
 
+genByteStringLit :: B.ByteString -> G Coq_ident
+genByteStringLit s = genStringLit (B.unpack s ++ "\0")
+
+genStringLit :: String -> G Coq_ident
+genStringLit msg = do
+    strName <- freshGlobal
+    litName <- freshGlobal
+
+    emitTL $ TLGlobal $ Coq_mk_global
+        strName
+        msgTy
+        True
+        (Just (SV (VALUE_Cstring msg)))
+        (Just LINKAGE_Private)
+        Nothing
+        Nothing
+        Nothing
+        False
+        Nothing
+        False
+        Nothing
+        Nothing
+
+    emitAliasedGlobal LINKAGE_External litName hsTy ptrBoxTy $
+        SV $ VALUE_Struct [ (enterFunTyP, ident printAndExitIdent)
+                          , (ptrTy, SV (OP_Conversion Bitcast msgTyP (ident (ID_Global strName)) ptrTy))
+                          ]
+    return (ID_Global litName)
+  where
+    msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
+    msgTyP = TYPE_Pointer msgTy
+
 genPrintAndExitClosure :: String -> String -> G ()
 genPrintAndExitClosure name msg = do
     emitTL $ TLGlobal $ Coq_mk_global
@@ -128,7 +162,7 @@ genPrintAndExitClosure name msg = do
 
     emitAliasedGlobal LINKAGE_External raw_ident hsTy printAndExitClosureTy $
         SV $ VALUE_Struct [ (enterFunTyP, ident printAndExitIdent)
-                          , (cStrTy, SV (OP_Conversion Bitcast msgTyP (ident (ID_Global str_ident)) cStrTy))
+                          , (ptrTy, SV (OP_Conversion Bitcast msgTyP (ident (ID_Global str_ident)) ptrTy))
                           ]
 
   where
@@ -143,5 +177,4 @@ genPrintAndExitClosure name msg = do
 
     msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
     msgTyP = TYPE_Pointer msgTy
-    cStrTy = TYPE_Pointer (TYPE_I 8)
 
