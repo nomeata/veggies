@@ -133,3 +133,62 @@ genIntegerLitForReal l litName = do
          Nothing
          False
     return ()
+
+genPrintAndExitClosure :: String -> String -> G ()
+genPrintAndExitClosure name msg = do
+    emitTL $ TLGlobal $ Coq_mk_global
+        str_ident
+        msgTy
+        True
+        (Just (SV (VALUE_Cstring msg)))
+        (Just LINKAGE_Private)
+        Nothing
+        Nothing
+        Nothing
+        False
+        Nothing
+        False
+        Nothing
+        Nothing
+
+    emitTL $ TLGlobal $ Coq_mk_global
+            tmp_ident
+            printAndExitClosureTy
+            True -- constant
+            (Just val)
+            (Just LINKAGE_Private)
+            Nothing
+            Nothing
+            Nothing
+            False
+            Nothing
+            False
+            Nothing
+            Nothing
+
+    emitTL $ TLAlias $ Coq_mk_alias
+           raw_ident
+           hsTy
+           (SV (OP_Conversion Bitcast printAndExitClosureTyP (ident (ID_Global tmp_ident)) hsTyP))
+           (Just LINKAGE_External)
+           Nothing
+           Nothing
+           Nothing
+           False
+  where
+    raw_ident = Name ident_str
+    ident_str = name
+
+    tmp_ident = Name tmp_str
+    tmp_str = name ++ "_tmp"
+
+    str_ident = Name str_str
+    str_str = name ++ "_str"
+
+    msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
+    msgTyP = TYPE_Pointer msgTy
+    cStrTy = TYPE_Pointer (TYPE_I 8)
+
+    val = SV $ VALUE_Struct [ (enterFunTyP, ident printAndExitIdent),
+                              (cStrTy, SV (OP_Conversion Bitcast msgTyP (ident (ID_Global str_ident)) cStrTy)) ]
+

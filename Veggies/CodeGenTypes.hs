@@ -188,8 +188,21 @@ defaultTyDecls =
     , TLTyDef $ Coq_mk_type_decl (Name "thunk") (mkThunkTy 0)
     , TLTyDef $ Coq_mk_type_decl (Name "dc")    (mkDataConTy 0)
     , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
+    , TLTyDef $ Coq_mk_type_decl (Name "printAndExitClosure") mkPrintAndExitClosureTy
     ]
 
 returnArgIdent :: Coq_ident
 returnArgIdent = ID_Global (Name "rts_returnArg")
+
+cStrTy :: Coq_typ
+cStrTy = TYPE_Pointer (TYPE_I 8)
+
+mkPrintAndExitClosureTy :: Coq_typ
+mkPrintAndExitClosureTy = TYPE_Struct [ enterFunTyP, cStrTy ]
+
+printAndExitClosureTy = TYPE_Identified (ID_Global (Name "printAndExitClosure"))
+printAndExitClosureTyP = TYPE_Pointer printAndExitClosureTy
+
+printAndExitIdent :: Coq_ident
+printAndExitIdent = ID_Global (Name "rts_printAndExit")
 

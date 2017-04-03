@@ -31,6 +31,8 @@ import BasicTypes
 import VarSet
 import VarEnv
 import Literal
+import ForeignCall
+import FastString
 
 import Ollvm_ast
 
@@ -57,7 +59,9 @@ genCode name tycons binds
   where
     env = mkGenEnv (flattenBinds binds)
 
-    globals = runG $ sequence_ [genStaticVal env v e | (v,e) <- flattenBinds binds ]
+    globals = runG $ do
+        genStaticIntLits
+        sequence_ [genStaticVal env v e | (v,e) <- flattenBinds binds ]
 
 mkGenEnv :: [(Id, CoreExpr)] -> GenEnv
 mkGenEnv pairs =
@@ -358,12 +362,9 @@ genExpr env (Case scrut b _ alts) = do
     emitTerm $ tagSwitch t [ (tagOf ac, caseAltEntryRawId b (tagOf ac))
                            | (ac, _, _) <- alts ]
 
-    mapM_ genAlt alts
+    phiArgs <- mapM genAlt alts
 
-    res <- namedPhiBlock hsTyP (caseAltJoinRawId b)
-        [ (caseAltRetIdent b (tagOf ac), caseAltExitRawId b (tagOf ac))
-        | (ac, _, _) <- alts ]
-    return res
+    namedPhiBlock hsTyP (caseAltJoinRawId b) phiArgs
   where
     scrut_cast_tyP | intPrimTy `eqType` idType b = intBoxTyP
                    | otherwise                   = dataConTyP
@@ -388,9 +389,10 @@ genExpr env (Case scrut b _ alts) = do
             patPtr <- emitInstr $ getElemPtr dataConTyP scrut_cast_ident [0,2,n]
             emitNamedInstr (varRawId pat) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident patPtr) Nothing
 
-        tmpId <- genExpr env rhs
-        emitNamedInstr (caseAltRetRawId b (tagOf ac)) $ noop hsTyP (ident tmpId)
+        ret <- genExpr env rhs
         namedBr1Block (caseAltExitRawId b (tagOf ac)) (caseAltJoinRawId b)
+
+        return (ret, caseAltExitRawId b (tagOf ac))
 
 genExpr env (Let binds body) = do
     fills <- sequence [ genLetBind env v e | (v,e) <- flattenBinds [binds] ]
@@ -425,6 +427,10 @@ genExpr env e
     args_locals <- mapM (genArg env) args'
     genFunctionCall evaledFun args_locals
 
+genExpr env (Var v)
+    | Just (CCall (CCallSpec (StaticTarget _ l _ _) _ _)) <- isFCallId_maybe v =
+    return (ID_Global (Name ("ffi_" ++ unpackFS l)))
+
 genExpr env (Var v) | isUnliftedType (idType v) = do
     return (varIdent env v)
 
@@ -452,8 +458,9 @@ genExpr env e =
     emitInstr $ noop hsTyP (SV (VALUE_Null))
 
 genArg :: GenEnv -> CoreArg -> LG Coq_ident
-genArg env (Cast e _) = genArg env e
-genArg env (App e a) | isTyCoArg a = genArg env e
+genArg env (Cast e _)               = genArg env e
+genArg env (App e a) | isTyCoArg a  = genArg env e
+genArg env (Lam v e) | not (isId v) = genArg env e
 genArg env (Var v) = do
     return $ varIdent env v
 genArg env (Lit (MachInt l)) = do
