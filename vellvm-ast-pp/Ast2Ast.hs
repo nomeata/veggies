@@ -135,8 +135,8 @@ instance Conv Coq_instr Instruction where
     conv (INSTR_Call (t,f) tos)
         = A.Call Nothing CC.C [] (Right (conv (TYPE_Pointer t,f))) [ (conv to, []) | to <- tos ] [] []
     conv (INSTR_Phi t preds )
-        = A.Phi (conv t) [ (LocalReference (conv t) (conv o), conv l)
-                         | (ID_Local o,SV (VALUE_Ident (ID_Local l))) <- preds ] []
+        = A.Phi (conv t) [ (conv (t,o), conv l)
+                         | (o,SV (VALUE_Ident (ID_Local l))) <- preds ] []
     {-
     conv (INSTR_Call Coq_tident ([] Coq_tvalue)
     conv (INSTR_Phi Coq_typ ([] ((,) Coq_ident Coq_value))
