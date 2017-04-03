@@ -3,6 +3,7 @@
 module Veggies.CodeGen where
 
 import Data.List
+import Data.Char
 import Data.Maybe
 import Data.Bifunctor
 import Control.Arrow ((&&&))
@@ -127,13 +128,16 @@ genStaticVal env v rhs
     genStaticArg (Lit (MachWord l)) = do
         lit <- genIntegerLit l
         return (ident lit)
+    genStaticArg (Lit (MachChar c)) = do
+        lit <- genIntegerLit (fromIntegral (ord c))
+        return (ident lit)
     genStaticArg (Lit (MachStr s)) = do
         lit <- genByteStringLit s
         return (ident lit)
     genStaticArg (Lit MachNullAddr) = do
         return (ident nullPtrBoxIdent)
     genStaticArg (Lit l) =
-        pprTrace "getStaticArg" (ppr l) $
+        pprTrace "genStaticArg" (ppr l) $
         return $ SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
@@ -362,9 +366,10 @@ genExpr env (Coercion _) = do
 
 genExpr env (Lit (MachInt l)) = do
     liftG $ genIntegerLit l
-
 genExpr env (Lit (MachWord l)) = do
     liftG $ genIntegerLit l
+genExpr env (Lit (MachChar c)) = do
+    liftG $ genIntegerLit (fromIntegral (ord c))
 
 genExpr env (Lit (MachStr s)) = do
     liftG $ genByteStringLit s
@@ -391,6 +396,8 @@ genArg env (Lit (MachInt l)) = do
     liftG $ genIntegerLit l
 genArg env (Lit (MachWord l)) = do
     liftG $ genIntegerLit l
+genArg env (Lit (MachChar c)) = do
+    liftG $ genIntegerLit (fromIntegral (ord c))
 genArg env (Lit (MachStr s)) = do
     liftG $ genByteStringLit s
 genArg env (Lit MachNullAddr) = do
