@@ -429,7 +429,7 @@ genExpr env e
 
 genExpr env (Var v)
     | Just (CCall (CCallSpec (StaticTarget _ l _ _) _ _)) <- isFCallId_maybe v =
-    return (ID_Global (Name ("ffi_" ++ unpackFS l)))
+    genEnterAndEval (ID_Global (Name ("ffi_" ++ unpackFS l)))
 
 genExpr env (Var v) | isUnliftedType (idType v) = do
     return (varIdent env v)
