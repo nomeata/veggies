@@ -25,7 +25,9 @@ Setup
 *.a
 a.out
 test/*.ll
-fake-base/GHC/*.ll
+ghc-prim/**/*.ll
+base/**/*.ll
+integer-gmp/**/*.ll
 vellvm-ast-pp/ShowAst
 test/Factorial
 .gdb_history
