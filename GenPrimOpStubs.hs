@@ -22,7 +22,7 @@ genNullPtrBox = emitAliasedGlobal LINKAGE_External nullPtrBoxRawId hsTy ptrBoxTy
 genPrimVal :: String -> G ()
 genPrimVal name =
     genPrintAndExitClosure (primName name Nothing) $
-        "entered primitive value" ++ name
+        "entered primitive value " ++ name
 
 voidIdent = ID_Global (Name (primName "void#" Nothing))
 
@@ -74,12 +74,12 @@ primOpBody AddrEqOp = Just $ do
     ptr2' <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint ptrTy (ident ptr2) i64))
     res <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident ptr1') (ident ptr2')))
     resInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext (TYPE_I 1) (ident res) i64))
-    ret <- boxPrimValue i64 intBoxTy resInt
+    ret <- boxPrimValue i64 intBoxTy (ident resInt)
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody MakeStablePtrOp = Just $ do
     ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
-    res <- boxPrimValue ptrTy ptrBoxTy ptr
+    res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     ret <- genReturnIO (paramIdents !! 1) res
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
@@ -88,13 +88,20 @@ primOpBody DeRefStablePtrOp = Just $ do
     casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
     emitTerm $ TERM_Ret (hsTyP, ident casted)
 
+primOpBody NewMVarOp = Just $ do
+    res <- boxPrimValue ptrTy ptrBoxTy (SV VALUE_Null)
+    ret <- genReturnIO (paramIdents !! 0) res
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
 primOpBody PutMVarOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 1)) ptrTy))
+    setPrimValue ptrTy ptrBoxTy (paramIdents !! 0) (ident ptr)
+    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 2))
+primOpBody TakeMVarOp = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
+    ret <- genReturnIO (paramIdents !! 1) val
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
-primOpBody NewMVarOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 0) voidIdent
-    emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody NewArrayOp = Just $ do
     ret <- genReturnIO (paramIdents !! 2) voidIdent
@@ -104,6 +111,12 @@ primOpBody NoDuplicateOp = Just $ do
     emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 0))
 
 primOpBody MaskAsyncExceptionsOp = Just $ do
+   -- apply first argument to the second argument
+    evaledFun <- genEnterAndEval (paramIdents !! 0)
+    ret <- genFunctionCall evaledFun [(paramIdents !! 1)]
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody UnmaskAsyncExceptionsOp = Just $ do
    -- apply first argument to the second argument
     evaledFun <- genEnterAndEval (paramIdents !! 0)
     ret <- genFunctionCall evaledFun [(paramIdents !! 1)]

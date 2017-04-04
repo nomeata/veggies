@@ -90,24 +90,34 @@ allocateDataCon tag arity = alloc
     thisDataConTy = mkDataConTy arity
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
-boxPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> LG Coq_ident
+boxPrimValue :: Coq_typ -> Coq_typ -> Coq_value -> LG Coq_ident
 boxPrimValue valTy boxTy v = do
     boxRawPtr <- genMalloc boxTyP
+    box <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident boxRawPtr) hsTyP))
 
     casted <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident boxRawPtr) boxTyP))
-
+        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident box) boxTyP))
     codePtr <- emitInstr $ getElemPtr boxTy casted [0,0]
     emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
 
-    valPtr <- emitInstr $ getElemPtr boxTy casted [0,1]
-    emitVoidInstr $ INSTR_Store False (valTyP, ident valPtr) (valTy, ident v) Nothing
+    setPrimValue valTy boxTy box v
 
-    box <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident boxRawPtr) hsTyP))
     return box
   where boxTyP = TYPE_Pointer boxTy
         valTyP = TYPE_Pointer valTy
+
+setPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> Coq_value -> LG ()
+setPrimValue valTy boxTy box v = do
+    casted <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident box) boxTyP))
+
+    valPtr <- emitInstr $ getElemPtr boxTy casted [0,1]
+    emitVoidInstr $ INSTR_Store False (valTyP, ident valPtr) (valTy, v) Nothing
+  where boxTyP = TYPE_Pointer boxTy
+        valTyP = TYPE_Pointer valTy
+
+
 
 unboxPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> LG Coq_ident
 unboxPrimValue valTy boxTy v = do
