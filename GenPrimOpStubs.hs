@@ -43,15 +43,15 @@ genUnboxedUnitTuple x = do
     return dc
 
 mkIntOpBody op = do
-    o1 <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
-    o2 <- unboxPrimValue i64 intBoxTy (paramIdents !! 1)
+    o1 <- unboxPrimValue i64 intBoxTy (p 0)
+    o2 <- unboxPrimValue i64 intBoxTy (p  1)
     res <- emitInstr $ INSTR_Op (SV (OP_IBinop op i64 (ident o1) (ident o2)))
     ret <- boxPrimValue i64 intBoxTy (ident res)
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 mkCmpBody cmp = do
-    o1 <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
-    o2 <- unboxPrimValue i64 intBoxTy (paramIdents !! 1)
+    o1 <- unboxPrimValue i64 intBoxTy (p  0)
+    o2 <- unboxPrimValue i64 intBoxTy (p  1)
     res <- emitInstr $ INSTR_Op (SV (OP_ICmp cmp i64 (ident o1) (ident o2)))
     resInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext (TYPE_I 1) (ident res) i64))
     ret <- boxPrimValue i64 intBoxTy (ident resInt)
@@ -59,7 +59,7 @@ mkCmpBody cmp = do
 
 primOpBody :: PrimOp -> Maybe (LG ())
 primOpBody TagToEnumOp = Just $ do
-    tag <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
+    tag <- unboxPrimValue i64 intBoxTy (p  0)
     tag' <- emitInstr $
             INSTR_Op (SV (OP_IBinop (Add False False) i64 (ident tag) (SV (VALUE_Integer 1))))
 
@@ -82,8 +82,8 @@ primOpBody TagToEnumOp = Just $ do
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
 primOpBody AddrEqOp = Just $ do
-    ptr1 <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
-    ptr2 <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 1)
+    ptr1 <- unboxPrimValue ptrTy ptrBoxTy (p  0)
+    ptr2 <- unboxPrimValue ptrTy ptrBoxTy (p  1)
     ptr1' <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint ptrTy (ident ptr1) i64))
     ptr2' <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint ptrTy (ident ptr2) i64))
     res <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident ptr1') (ident ptr2')))
@@ -113,89 +113,143 @@ primOpBody WordNeOp = Just $ mkCmpBody Ne
 primOpBody WordLtOp = Just $ mkCmpBody Ult
 primOpBody WordLeOp = Just $ mkCmpBody Ule
 
+primOpBody IndexOffAddrOp_Char = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr ptrTy (ptrTy, ident ptr) [(i64, ident offset)]))
+    byte <- emitInstr $ INSTR_Load False i8 (TYPE_Pointer ptrTy, ident resP) Nothing
+    int <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident byte) i64))
+    res <- boxPrimValue i64 intBoxTy (ident int)
+    emitTerm $ TERM_Ret (hsTyP, ident res)
+
+primOpBody ReadOffAddrOp_Int8 = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr ptrTy (ptrTy, ident ptr) [(i64, ident offset)]))
+    byte <- emitInstr $ INSTR_Load False i8 (TYPE_Pointer ptrTy, ident resP) Nothing
+    int <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident byte) i64))
+    res <- boxPrimValue i64 intBoxTy (ident int)
+    ret <- genReturnIO (p 2) res
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody WriteOffAddrOp_Int8 = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    byteP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr ptrTy (ptrTy, ident ptr) [(i64, ident offset)]))
+
+    int <- unboxPrimValue i64 intBoxTy (p 2)
+    byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
+
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer ptrTy, ident byteP) (i8, ident byte) Nothing
+    emitTerm $ TERM_Ret (hsTyP, ident (p 3))
+
 primOpBody MakeStablePtrOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 0)) ptrTy))
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
-    ret <- genReturnIO (paramIdents !! 1) res
+    ret <- genReturnIO (p 1) res
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody DeRefStablePtrOp = Just $ do
-    ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
     casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
     emitTerm $ TERM_Ret (hsTyP, ident casted)
 
 primOpBody NewMVarOp = Just $ do
     res <- boxPrimValue ptrTy ptrBoxTy (SV VALUE_Null)
-    ret <- genReturnIO (paramIdents !! 0) res
+    ret <- genReturnIO (p 0) res
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 primOpBody PutMVarOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 1)) ptrTy))
-    setPrimValue ptrTy ptrBoxTy (paramIdents !! 0) (ident ptr)
-    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 2))
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    setPrimValue ptrTy ptrBoxTy (p 0) (ident ptr)
+    emitTerm $ TERM_Ret (hsTyP, ident (p 2))
 primOpBody TakeMVarOp = Just $ do
-    ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
     val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
-    ret <- genReturnIO (paramIdents !! 1) val
+    ret <- genReturnIO (p 1) val
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody NewMutVarOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 0)) ptrTy))
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
-    ret <- genReturnIO (paramIdents !! 1) res
+    ret <- genReturnIO (p 1) res
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 primOpBody WriteMutVarOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 1)) ptrTy))
-    setPrimValue ptrTy ptrBoxTy (paramIdents !! 0) (ident ptr)
-    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 2))
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    setPrimValue ptrTy ptrBoxTy (p 0) (ident ptr)
+    emitTerm $ TERM_Ret (hsTyP, ident (p 2))
 primOpBody ReadMutVarOp = Just $ do
-    ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
     val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
-    ret <- genReturnIO (paramIdents !! 1) val
+    ret <- genReturnIO (p 1) val
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
+primOpBody Narrow8IntOp = Just $ do
+    int <- unboxPrimValue i64 intBoxTy (p 0)
+    byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
+    int' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident int) i64))
+    val <- boxPrimValue i64 intBoxTy (ident int')
+    emitTerm $ TERM_Ret (hsTyP, ident val)
+
+primOpBody  OrdOp = Just $ do
+    emitTerm $ TERM_Ret (hsTyP, ident (p 0))
 
 primOpBody NewArrayOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    ret <- genReturnIO (p 2) voidIdent
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 primOpBody ReadArrayOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    ret <- genReturnIO (p 2) voidIdent
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 primOpBody WriteArrayOp = Just $ do
-    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 3))
+    emitTerm $ TERM_Ret (hsTyP, ident (p 3))
+
+primOpBody  ByteArrayContents_Char = Just $ do
+    emitTerm $ TERM_Ret (hsTyP, ident (p 0))
+
+primOpBody  UnsafeFreezeByteArrayOp = Just $ do
+    ret <- genReturnIO (p 1) (p 0)
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody  NewAlignedPinnedByteArrayOp_Char = Just $ do
+   -- Int# -> Int# -> State# s -> (# State# s, MutableByteArray# s #), size first
+    size <- unboxPrimValue i64 intBoxTy (p 0)
+    ptr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+    val <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
+    ret <- genReturnIO (p 2) val
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 
 primOpBody NoDuplicateOp = Just $ do
-    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 0))
+    emitTerm $ TERM_Ret (hsTyP, ident (p 0))
 
 primOpBody MaskAsyncExceptionsOp = Just $ do
    -- apply first argument to the second argument
-    evaledFun <- genEnterAndEval (paramIdents !! 0)
-    ret <- genFunctionCall evaledFun [(paramIdents !! 1)]
+    evaledFun <- genEnterAndEval (p 0)
+    ret <- genFunctionCall evaledFun [(p 1)]
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody UnmaskAsyncExceptionsOp = Just $ do
    -- apply first argument to the second argument
-    evaledFun <- genEnterAndEval (paramIdents !! 0)
-    ret <- genFunctionCall evaledFun [(paramIdents !! 1)]
+    evaledFun <- genEnterAndEval (p 0)
+    ret <- genFunctionCall evaledFun [(p 1)]
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody MaskStatus = Just $ do
     zero <- liftG $ genIntegerLit 0
-    ret <- genReturnIO (paramIdents !! 0) zero
+    ret <- genReturnIO (p 0) zero
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody MkWeakNoFinalizerOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    ret <- genReturnIO (p 2) voidIdent
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody MyThreadIdOp = Just $ do
-    ret <- genReturnIO (paramIdents !! 0) voidIdent
+    ret <- genReturnIO (p 0) voidIdent
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody CatchOp = Just $ do
    -- apply first argument to the third argument
-    evaledFun <- genEnterAndEval (paramIdents !! 0)
-    ret <- genFunctionCall evaledFun [(paramIdents !! 2)]
+    evaledFun <- genEnterAndEval (p 0)
+    ret <- genFunctionCall evaledFun [(p 2)]
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody _ = Nothing
@@ -206,15 +260,20 @@ withArity a x = Just (a,x)
 ffiBody :: String -> Maybe (Int, LG ())
 ffiBody "ffi_getOrSetGHCConcSignalSignalHandlerStore"
     = withArity 2 $ do
-        ret <- genReturnIO (paramIdents !! 1) (paramIdents !! 0)
+        ret <- genReturnIO (p 1) (p 0)
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 ffiBody "ffi_hs_free_stable_ptr"
     = withArity 2 $ do
-        ret <- genUnboxedUnitTuple (paramIdents !! 1)
+        ret <- genUnboxedUnitTuple (p 1)
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 ffiBody "ffi_stg_sig_install"
     = withArity 4 $ do
-        ret <- genReturnIO (paramIdents !! 3) (paramIdents !! 1)
+        ret <- genReturnIO (p 3) (p 1)
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
+ffiBody "ffi_localeEncoding"
+    = withArity 1 $ do
+        res <- liftG $ genStringLit "\0"
+        ret <- genReturnIO (p 0) res
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 ffiBody _ = Nothing
 
@@ -279,6 +338,8 @@ paramRawId = map Name paramStrs
 
 paramIdents :: [Coq_ident]
 paramIdents = map ID_Local paramRawId
+
+p n = paramIdents !! n
 
 
 main = do

@@ -104,7 +104,8 @@ mkIntBoxTy = TYPE_Struct [ enterFunTyP, i64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
-ptrTy = TYPE_Pointer (TYPE_I 8)
+i8 = TYPE_I 8
+ptrTy = TYPE_Pointer i8
 mkPtrBoxTy = TYPE_Struct [ enterFunTyP, ptrTy ]
 ptrBoxTy = TYPE_Identified (ID_Global (Name "ptr"))
 ptrBoxTyP = TYPE_Pointer ptrBoxTy
@@ -213,7 +214,7 @@ indirectionIdent :: Coq_ident
 indirectionIdent = ID_Global (Name "rts_indirection")
 
 cStrTy :: Coq_typ
-cStrTy = TYPE_Pointer (TYPE_I 8)
+cStrTy = TYPE_Pointer i8
 
 mkPrintAndExitClosureTy :: Coq_typ
 mkPrintAndExitClosureTy = TYPE_Struct [ enterFunTyP, cStrTy ]
