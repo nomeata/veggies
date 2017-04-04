@@ -80,6 +80,10 @@ isTopLvl :: GenEnv -> Id -> Bool
 isTopLvl env v = v `elemVarSet` topLvls env
 
 genStaticVal :: GenEnv -> Var -> CoreExpr -> G ()
+genStaticVal env v (Cast e _)               = genStaticVal env v e
+genStaticVal env v (Lam b e) | not (isId b) = genStaticVal env v e
+genStaticVal env v (App e a) | isTyCoArg a  = genStaticVal env v e
+
 genStaticVal env v rhs
     | getIdArity env v == 0
     , Just dc <- isDataConId_maybe v
@@ -141,10 +145,15 @@ genStaticVal env v rhs
         return $ SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
-
-
+-- An alias
+genStaticVal env v (Var v2) = do
+    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy indTy $
+        SV $ VALUE_Struct [ (enterFunTyP, ident indirectionIdent)
+                          , (hsTyP,       ident (varIdent env v2))
+                          ]
 -- A top-level function
 genStaticVal env v rhs | exprIsHNF rhs = do
+    unless (arity > 0) $ pprPanic "genStaticVal" (ppr v <+> ppr rhs)
     genTopLvlFunction env v rhs
 
     emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkFunClosureTy arity 0) $
@@ -408,6 +417,7 @@ genArg env e = pprTrace "genArg" (ppr e) $
 genLetBind :: GenEnv -> Var -> CoreExpr -> LG (LG ())
 
 -- A let-bound data constructor
+genLetBind env v (Cast e _) = genLetBind env v e
 genLetBind env v e
     | (Var f, args) <- collectArgs e
     , Just dc <- isDataConId_maybe f
@@ -420,7 +430,9 @@ genLetBind env v e
       return fill'
 
 -- A let-bound function
-genLetBind env v rhs | exprIsHNF rhs = alloc
+genLetBind env v rhs | exprIsHNF rhs =
+    if arity > 0 then alloc
+                 else pprPanic "genLetBind" (ppr v <+> ppr rhs)
   where
     (params, body) = collectMoreValBinders rhs
     arity = fromIntegral $ length params

@@ -1,6 +1,7 @@
 target triple = "x86_64-pc-linux-gnu"
 
 %hs = type { %hs* (%hs*)* }
+%ind = type { %hs* (%hs*)*, %hs* }
 %dc = type { %hs* (%hs*)*, i64, [0 x %hs*]}
 %printAndExitClosure = type { %hs* (%hs*)*, i8* }
 
@@ -82,6 +83,19 @@ define i64 @main() {   ; i32()*
 define %hs* @rts_returnArg(%hs* %clos) {
   ret %hs* %clos
 }
+
+define %hs* @rts_indirection(%hs* %clos) {
+  %cast = bitcast %hs* %clos to %ind*
+  %indirecteeP = getelementptr %ind, %ind* %cast, i32 0, i32 1
+  %indirectee = load %hs*, %hs** %indirecteeP
+
+  %enterPtr = getelementptr %hs, %hs* %indirectee, i32 0, i32 0
+  %enter = load %hs* (%hs*)*, %hs* (%hs*)** %enterPtr
+
+  %ret = call %hs* %enter(%hs* %indirectee)
+  ret %hs* %ret
+}
+
 
 
 declare i8* @malloc(i64)

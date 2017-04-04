@@ -95,6 +95,10 @@ mkFunClosureTyP n m = TYPE_Pointer (mkFunClosureTy n m)
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
 
+mkIndTy = TYPE_Struct [ enterFunTyP, hsTyP ]
+indTy = TYPE_Identified (ID_Global (Name "ind"))
+indTyP = TYPE_Pointer indTy
+
 i64 = TYPE_I 64
 mkIntBoxTy = TYPE_Struct [ enterFunTyP, i64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
@@ -199,10 +203,14 @@ defaultTyDecls =
     , TLTyDef $ Coq_mk_type_decl (Name "int")   mkIntBoxTy
     , TLTyDef $ Coq_mk_type_decl (Name "ptr")   mkPtrBoxTy
     , TLTyDef $ Coq_mk_type_decl (Name "printAndExitClosure") mkPrintAndExitClosureTy
+    , TLTyDef $ Coq_mk_type_decl (Name "ind")   mkIndTy
     ]
 
 returnArgIdent :: Coq_ident
 returnArgIdent = ID_Global (Name "rts_returnArg")
+
+indirectionIdent :: Coq_ident
+indirectionIdent = ID_Global (Name "rts_indirection")
 
 cStrTy :: Coq_typ
 cStrTy = TYPE_Pointer (TYPE_I 8)
