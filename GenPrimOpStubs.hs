@@ -220,6 +220,8 @@ primOpBody  NewAlignedPinnedByteArrayOp_Char = Just $ do
 
 primOpBody NoDuplicateOp = Just $ do
     emitTerm $ TERM_Ret (hsTyP, ident (p 0))
+primOpBody TouchOp = Just $ do
+    emitTerm $ TERM_Ret (hsTyP, ident (p 1))
 
 primOpBody MaskAsyncExceptionsOp = Just $ do
    -- apply first argument to the second argument
@@ -274,6 +276,17 @@ ffiBody "ffi_localeEncoding"
     = withArity 1 $ do
         res <- liftG $ genStringLit "\0"
         ret <- genReturnIO (p 0) res
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
+ffiBody "ffi_hs_iconv_open"
+    = withArity 3 $ do
+        ptr1 <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+        ptr2 <- unboxPrimValue ptrTy ptrBoxTy (p 1)
+        let iconv_open_ty = TYPE_Function ptrTy [ptrTy, ptrTy]
+            iconv_open_ident = ID_Global (Name "iconv_open")
+        ptr <- emitInstr $ INSTR_Call (iconv_open_ty, iconv_open_ident)
+            [(ptrTy, ident ptr1), (ptrTy, ident ptr2)]
+        res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
+        ret <- genReturnIO (p 2) res
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 ffiBody _ = Nothing
 
