@@ -113,10 +113,20 @@ instance Conv Coq_tident Operand where
 
 instance Conv Coq_ibinop (Operand -> Operand -> Instruction) where
     conv (O.Add nsw usw) = \o1 o2 -> A.Add nsw usw o1 o2 []
+    conv (O.Sub nsw usw) = \o1 o2 -> A.Sub nsw usw o1 o2 []
+    conv (O.Mul nsw usw) = \o1 o2 -> A.Mul nsw usw o1 o2 []
 
 instance Conv Coq_icmp A.IntegerPredicate where
     conv O.Eq = A.EQ
+    conv O.Ne = A.NE
     conv O.Sle = A.SLE
+    conv O.Slt = A.SLT
+    conv O.Sgt = A.SGT
+    conv O.Sge = A.SGE
+    conv O.Ule = A.ULE
+    conv O.Ult = A.ULT
+    conv O.Ugt = A.UGT
+    conv O.Uge = A.UGE
 
 instance Conv Coq_instr Instruction where
     conv (INSTR_Op (SV (OP_IBinop op  t a1 a2)))

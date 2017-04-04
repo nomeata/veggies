@@ -3,7 +3,7 @@
 {-# LANGUAGE UnboxedTuples #-}
 -- module Factorial where
 
-data Nat = Z | S Nat
+data Nat = Z | S Nat deriving Show
 
 pred Z = Z
 pred (S a) = a
@@ -68,9 +68,9 @@ returnLambda2 n = \x y -> x * n * y
 {-# NOINLINE returnLambda2 #-}
 
 
-main :: IO Nat
+main :: IO ()
 -- main = IO (\s -> (# s, Z #))
 main =
     let n = 10 in
     let x = intToNat (genFac (returnLambda2 1) n) `eq` fac (intToNat n) in x `seq`
-    return x
+    print x

@@ -46,8 +46,6 @@ define i64 @main() {   ; i32()*
 
 ; some embedded things
 
-@GHCziPrim_coercionTokenzh = constant %hs { %hs* (%hs*)* @rts_returnArg }
-
 define %hs* @rts_returnArg(%hs* %clos) {
   ret %hs* %clos
 }
@@ -63,78 +61,3 @@ define %hs* @rts_indirection(%hs* %clos) {
   %ret = call %hs* %enter(%hs* %indirectee)
   ret %hs* %ret
 }
-
-
-
-declare i8* @malloc(i64)
-
-%fun_clos2 = type { %hs* (%hs*)*, %hs* ([0 x %hs*]*, %hs*, %hs*)*, i64, [0 x %hs*] }
-%int = type { %hs* (%hs*)*, i64 }
-
-@GHCziPrim_zpzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_zpzh_fun, i64 2, [0 x %hs*] zeroinitializer }
-@GHCziPrim_zpzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_zpzh_tmp to %hs*)
-@GHCziPrim_plusWordzh = alias %hs, %hs* @GHCziPrim_zpzh
-define %hs* @GHCziPrim_zpzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
-  %a_cast = bitcast %hs* %a to %int*
-  %b_cast = bitcast %hs* %b to %int*
-  %a_ptr = getelementptr %int, %int* %a_cast, i32 0, i32 1
-  %b_ptr = getelementptr %int, %int* %b_cast, i32 0, i32 1
-  %a_val = load i64, i64* %a_ptr
-  %b_val = load i64, i64* %b_ptr
-  %c_val = add i64 %a_val, %b_val
-  %c_raw = call i8* @malloc(i64 ptrtoint (%int* getelementptr (%int, %int* null, i32 1) to i64))
-  %c_ret = bitcast i8* %c_raw to %hs*
-  %c_cast = bitcast %hs* %c_ret to %int*
-  %returnPtr = getelementptr %int, %int* %c_cast, i32 0, i32 0
-  store %hs* (%hs*)* @rts_returnArg, %hs* (%hs*)** %returnPtr
-  %valPtr = getelementptr %int, %int* %c_cast, i32 0, i32 1
-  store i64 %c_val, i64* %valPtr
-  ret %hs* %c_ret
-}
-
-
-@GHCziPrim_zmzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_zmzh_fun, i64 2, [0 x %hs*] zeroinitializer }
-@GHCziPrim_zmzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_zmzh_tmp to %hs*)
-@GHCziPrim_minusWordzh = alias %hs, %hs* @GHCziPrim_zmzh
-define %hs* @GHCziPrim_zmzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
-  %a_cast = bitcast %hs* %a to %int*
-  %b_cast = bitcast %hs* %b to %int*
-  %a_ptr = getelementptr %int, %int* %a_cast, i32 0, i32 1
-  %b_ptr = getelementptr %int, %int* %b_cast, i32 0, i32 1
-  %a_val = load i64, i64* %a_ptr
-  %b_val = load i64, i64* %b_ptr
-  %c_val = sub i64 %a_val, %b_val
-  %c_raw = call i8* @malloc(i64 ptrtoint (%int* getelementptr (%int, %int* null, i32 1) to i64))
-  %c_ret = bitcast i8* %c_raw to %hs*
-  %c_cast = bitcast %hs* %c_ret to %int*
-  %returnPtr = getelementptr %int, %int* %c_cast, i32 0, i32 0
-  store %hs* (%hs*)* @rts_returnArg, %hs* (%hs*)** %returnPtr
-  %valPtr = getelementptr %int, %int* %c_cast, i32 0, i32 1
-  store i64 %c_val, i64* %valPtr
-  ret %hs* %c_ret
-}
-
-
-@GHCziPrim_ztzh_tmp = private constant %fun_clos2 { %hs* (%hs*)* @rts_returnArg, %hs* ([0 x %hs*]*, %hs*, %hs*)* @GHCziPrim_ztzh_fun, i64 2, [0 x %hs*] zeroinitializer }
-@GHCziPrim_ztzh = alias %hs, bitcast (%fun_clos2* @GHCziPrim_ztzh_tmp to %hs*)
-@GHCziPrim_timesWordzh = alias %hs, %hs* @GHCziPrim_ztzh
-define %hs* @GHCziPrim_ztzh_fun([0 x %hs*]* %clos, %hs* %a, %hs* %b) {
-  %a_cast = bitcast %hs* %a to %int*
-  %b_cast = bitcast %hs* %b to %int*
-  %a_ptr = getelementptr %int, %int* %a_cast, i32 0, i32 1
-  %b_ptr = getelementptr %int, %int* %b_cast, i32 0, i32 1
-  %a_val = load i64, i64* %a_ptr
-  %b_val = load i64, i64* %b_ptr
-  %c_val = mul i64 %a_val, %b_val
-  %c_raw = call i8* @malloc(i64 ptrtoint (%int* getelementptr (%int, %int* null, i32 1) to i64))
-  %c_ret = bitcast i8* %c_raw to %hs*
-  %c_cast = bitcast %hs* %c_ret to %int*
-  %returnPtr = getelementptr %int, %int* %c_cast, i32 0, i32 0
-  store %hs* (%hs*)* @rts_returnArg, %hs* (%hs*)** %returnPtr
-  %valPtr = getelementptr %int, %int* %c_cast, i32 0, i32 1
-  store i64 %c_val, i64* %valPtr
-  ret %hs* %c_ret
-}
-
-
-

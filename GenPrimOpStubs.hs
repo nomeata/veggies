@@ -42,6 +42,20 @@ genUnboxedUnitTuple x = do
     fill [ x ]
     return dc
 
+mkIntOpBody op = do
+    o1 <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
+    o2 <- unboxPrimValue i64 intBoxTy (paramIdents !! 1)
+    res <- emitInstr $ INSTR_Op (SV (OP_IBinop op i64 (ident o1) (ident o2)))
+    ret <- boxPrimValue i64 intBoxTy (ident res)
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+mkCmpBody cmp = do
+    o1 <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
+    o2 <- unboxPrimValue i64 intBoxTy (paramIdents !! 1)
+    res <- emitInstr $ INSTR_Op (SV (OP_ICmp cmp i64 (ident o1) (ident o2)))
+    resInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext (TYPE_I 1) (ident res) i64))
+    ret <- boxPrimValue i64 intBoxTy (ident resInt)
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
 
 primOpBody :: PrimOp -> Maybe (LG ())
 primOpBody TagToEnumOp = Just $ do
@@ -77,13 +91,27 @@ primOpBody AddrEqOp = Just $ do
     ret <- boxPrimValue i64 intBoxTy (ident resInt)
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
-primOpBody IntLeOp = Just $ do
-    o1 <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
-    o2 <- unboxPrimValue i64 intBoxTy (paramIdents !! 1)
-    res <- emitInstr $ INSTR_Op (SV (OP_ICmp Sle i64 (ident o1) (ident o2)))
-    resInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext (TYPE_I 1) (ident res) i64))
-    ret <- boxPrimValue i64 intBoxTy (ident resInt)
-    emitTerm $ TERM_Ret (hsTyP, ident ret)
+primOpBody IntAddOp = Just $ mkIntOpBody (Add False False)
+primOpBody IntSubOp = Just $ mkIntOpBody (Sub False False)
+primOpBody IntMulOp = Just $ mkIntOpBody (Mul False False)
+
+primOpBody IntGtOp = Just $ mkCmpBody Sgt
+primOpBody IntGeOp = Just $ mkCmpBody Sge
+primOpBody IntEqOp = Just $ mkCmpBody Eq
+primOpBody IntNeOp = Just $ mkCmpBody Ne
+primOpBody IntLtOp = Just $ mkCmpBody Slt
+primOpBody IntLeOp = Just $ mkCmpBody Sle
+
+primOpBody WordAddOp = Just $ mkIntOpBody (Add False False)
+primOpBody WordSubOp = Just $ mkIntOpBody (Sub False False)
+primOpBody WordMulOp = Just $ mkIntOpBody (Mul False False)
+
+primOpBody WordGtOp = Just $ mkCmpBody Ugt
+primOpBody WordGeOp = Just $ mkCmpBody Uge
+primOpBody WordEqOp = Just $ mkCmpBody Eq
+primOpBody WordNeOp = Just $ mkCmpBody Ne
+primOpBody WordLtOp = Just $ mkCmpBody Ult
+primOpBody WordLeOp = Just $ mkCmpBody Ule
 
 primOpBody MakeStablePtrOp = Just $ do
     ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
@@ -105,6 +133,21 @@ primOpBody PutMVarOp = Just $ do
     setPrimValue ptrTy ptrBoxTy (paramIdents !! 0) (ident ptr)
     emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 2))
 primOpBody TakeMVarOp = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
+    val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
+    ret <- genReturnIO (paramIdents !! 1) val
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
+primOpBody NewMutVarOp = Just $ do
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
+    res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
+    ret <- genReturnIO (paramIdents !! 1) res
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+primOpBody WriteMutVarOp = Just $ do
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 1)) ptrTy))
+    setPrimValue ptrTy ptrBoxTy (paramIdents !! 0) (ident ptr)
+    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 2))
+primOpBody ReadMutVarOp = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (paramIdents !! 0)
     val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
     ret <- genReturnIO (paramIdents !! 1) val
@@ -217,15 +260,6 @@ genFFIFunc name | Just (arity, body) <- ffiBody name = mkPrimFun name arity body
                 | otherwise = genPrintAndExitClosure name msg
   where msg = "Unsupported ffi call " ++ name ++ "\0"
 
-supportedPrimOps :: [PrimOp]
-supportedPrimOps =
-    [ IntAddOp
-    , IntSubOp
-    , IntMulOp
-    , WordAddOp
-    , WordSubOp
-    , WordMulOp
-    ]
 
 primModule :: Coq_modul
 primModule = mkCoqModul "GHC.Prim" $ runG $ do
@@ -233,8 +267,8 @@ primModule = mkCoqModul "GHC.Prim" $ runG $ do
     genStaticIntLits
     genNullPtrBox
 
-    mapM_ genPrimOp (allThePrimOps \\ supportedPrimOps)
-    mapM_ genPrimVal ["void#", "realWorld#", "proxy#"]
+    mapM_ genPrimOp allThePrimOps
+    mapM_ genPrimVal ["void#", "realWorld#", "proxy#", "coercionToken#"]
     mapM_ genFFIFunc ffi_fuction_calls
 
 paramStrs :: [String]
