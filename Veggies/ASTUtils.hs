@@ -217,7 +217,7 @@ instance HasGlobalNames Coq_value where
     glbNames (SV e) = glbNames e
 
 instance HasGlobalNames Coq_alias where
-    glbNames a = glbNames' (a_typ a) (a_value a)
+    glbNames a = glbNames' (TYPE_Pointer (a_typ a)) (a_value a)
 
 instance HasGlobalNames Coq_global where
     glbNames g = glbNames' (g_typ g) (g_value g)
