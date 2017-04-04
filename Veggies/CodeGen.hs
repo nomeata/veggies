@@ -96,7 +96,7 @@ genStaticVal env v rhs
 
 -- A top-level data con application
 genStaticVal env v rhs
-    | (Var f, args) <- collectArgs rhs
+    | (Var f, args) <- collectMoreValArgs rhs
     , Just dc <- isDataConId_maybe f
     , let val_args = mapMaybe getStaticArg args
     , not (null val_args)
@@ -115,13 +115,13 @@ genStaticVal env v rhs
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
 
     getStaticArg :: CoreExpr -> Maybe CoreExpr
-    getStaticArg (Cast e _)              = getStaticArg e
-    getStaticArg (App e a) | isTyCoArg a = getStaticArg e
+    getStaticArg (Cast e _)               = getStaticArg e
+    getStaticArg (App e a) | isTyCoArg a  = getStaticArg e
     getStaticArg (Lam v e) | not (isId v) = getStaticArg e
-    getStaticArg (Case e _ _ [])         = getStaticArg e -- See Note [Empty case is trivial]
-    getStaticArg (Var v)                 = Just (Var v)
-    getStaticArg (Lit l)                 = Just (Lit l)
-    getStaticArg _                       = Nothing
+    getStaticArg (Case e _ _ [])          = getStaticArg e -- See Note [Empty case is trivial]
+    getStaticArg (Var v)                  = Just (Var v)
+    getStaticArg (Lit l)                  = Just (Lit l)
+    getStaticArg _                        = Nothing
 
     genStaticArg :: CoreExpr -> G Coq_value
     genStaticArg (Var v) = do
@@ -265,6 +265,14 @@ collectMoreValBinders = go []
     go ids (Cast e _)         = go ids e
     go ids body               = (reverse ids, body)
 
+collectMoreValArgs :: CoreExpr -> (CoreExpr, [CoreArg])
+collectMoreValArgs expr = go expr []
+  where
+    go (Cast e _) as               = go e as
+    go (App e a)  as | isTypeArg a = go e as
+    go (App e a)  as               = go e (a:as)
+    go e          as               = (e, as)
+
 genExpr :: GenEnv -> CoreExpr -> LG Coq_ident
 genExpr env (Lam v e) | not (isId v) = genExpr env e
 genExpr env (App e a) | isTypeArg a = genExpr env e
@@ -339,25 +347,23 @@ genExpr env (Let binds body) = do
  -- unboxed tuples do not actually exist as global names, so we
  -- have to do them here on the fly. So just do all of them here.
 genExpr env e
-    | (Var v, args) <- collectArgs e
+    | (Var v, args) <- collectMoreValArgs e
     , Just dc <- isDataConWorkId_maybe v
-    , let args' = filter isValArg args
-    , not (null args')
-    , length args' == dataConRepArity dc
+    , not (null args)
+    , length args == dataConRepArity dc
     = do
 
-    arg_locals <- mapM (genArg env) args'
+    arg_locals <- mapM (genArg env) args
     (dc_local, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
     fill arg_locals
     return dc_local
 
 genExpr env e
-    | (f, args) <- collectArgs e
-    , let args' = filter isValArg args
-    , not (null args') = do
+    | (f, args) <- collectMoreValArgs e
+    , not (null args) = do
 
     evaledFun <- genExpr env f
-    args_locals <- mapM (genArg env) args'
+    args_locals <- mapM (genArg env) args
     genFunctionCall evaledFun args_locals
 
 genExpr env (Var v)
@@ -419,13 +425,13 @@ genLetBind :: GenEnv -> Var -> CoreExpr -> LG (LG ())
 -- A let-bound data constructor
 genLetBind env v (Cast e _) = genLetBind env v e
 genLetBind env v e
-    | (Var f, args) <- collectArgs e
+    | (Var f, args) <- collectMoreValArgs e
     , Just dc <- isDataConId_maybe f
     = do
       (dc_local, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
       emitNamedInstr (varRawId v) $ noop hsTyP (ident dc_local)
       let fill' = do
-          arg_locals <- mapM (genArg env) (filter isValArg args)
+          arg_locals <- mapM (genArg env) args
           fill arg_locals
       return fill'
 
