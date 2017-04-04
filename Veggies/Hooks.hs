@@ -20,7 +20,8 @@ import           Maybes               (expectJust)
 import           Control.Concurrent.MVar
 import           Control.Monad
 
-import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString      as B
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map             as M
 
 import           System.Directory     (copyFile, createDirectoryIfMissing)
@@ -32,7 +33,8 @@ import qualified GHC.LanguageExtensions as Ext
 
 import qualified Veggies.CodeGen as Veggies
 import qualified Ast2Ast as LLVM
-import qualified Ast2Assembly as LLVM
+import qualified LLVM.Pretty as LLVM
+import qualified Data.Text.Lazy.Encoding
 
 import Debug.Trace
 import Text.Groom
@@ -154,9 +156,9 @@ veggiesCompileModule env core mod = compile
       -- putStr $ groom vellvm_ast
       let llvm_ast = LLVM.convModule vellvm_ast
       -- putStr $ groom llvm_ast
-      ir <- LLVM.ast2Assembly llvm_ast
+      let ir = LLVM.ppllvm llvm_ast
       -- print "Got Core!"
-      return (B.pack ir)
+      return (BL.toStrict (Data.Text.Lazy.Encoding.encodeUtf8 ir))
       {-
       stg <- coreToStg dflags mod' core_binds
       (stg', cCCs) <- stg2stg dflags mod' stg
