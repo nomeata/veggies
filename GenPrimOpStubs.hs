@@ -77,6 +77,14 @@ primOpBody AddrEqOp = Just $ do
     ret <- boxPrimValue i64 intBoxTy (ident resInt)
     emitTerm $ TERM_Ret (hsTyP, ident ret)
 
+primOpBody IntLeOp = Just $ do
+    o1 <- unboxPrimValue i64 intBoxTy (paramIdents !! 0)
+    o2 <- unboxPrimValue i64 intBoxTy (paramIdents !! 1)
+    res <- emitInstr $ INSTR_Op (SV (OP_ICmp Sle i64 (ident o1) (ident o2)))
+    resInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext (TYPE_I 1) (ident res) i64))
+    ret <- boxPrimValue i64 intBoxTy (ident resInt)
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+
 primOpBody MakeStablePtrOp = Just $ do
     ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (paramIdents !! 0)) ptrTy))
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
@@ -106,6 +114,12 @@ primOpBody TakeMVarOp = Just $ do
 primOpBody NewArrayOp = Just $ do
     ret <- genReturnIO (paramIdents !! 2) voidIdent
     emitTerm $ TERM_Ret (hsTyP, ident ret)
+primOpBody ReadArrayOp = Just $ do
+    ret <- genReturnIO (paramIdents !! 2) voidIdent
+    emitTerm $ TERM_Ret (hsTyP, ident ret)
+primOpBody WriteArrayOp = Just $ do
+    emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 3))
+
 
 primOpBody NoDuplicateOp = Just $ do
     emitTerm $ TERM_Ret (hsTyP, ident (paramIdents !! 0))
@@ -154,6 +168,10 @@ ffiBody "ffi_getOrSetGHCConcSignalSignalHandlerStore"
 ffiBody "ffi_hs_free_stable_ptr"
     = withArity 2 $ do
         ret <- genUnboxedUnitTuple (paramIdents !! 1)
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
+ffiBody "ffi_stg_sig_install"
+    = withArity 4 $ do
+        ret <- genReturnIO (paramIdents !! 3) (paramIdents !! 1)
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 ffiBody _ = Nothing
 

@@ -116,6 +116,7 @@ instance Conv Coq_ibinop (Operand -> Operand -> Instruction) where
 
 instance Conv Coq_icmp A.IntegerPredicate where
     conv O.Eq = A.EQ
+    conv O.Sle = A.SLE
 
 instance Conv Coq_instr Instruction where
     conv (INSTR_Op (SV (OP_IBinop op  t a1 a2)))
