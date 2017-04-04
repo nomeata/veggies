@@ -40,40 +40,8 @@ define %hs* @rts_printAndExit(%hs* %clos) {
 ; Definition of main function
 @GHCziPrim_realWorldzh = external constant %hs
 define i64 @main() {   ; i32()*
-  ; Convert [13 x i8]* to i8  *...
-  %cast1 = getelementptr [13 x i8], [13 x i8]* @.str1, i64 0, i64 0
-
-  ; Call puts function to write out the string to stdout.
-  call void @puts(i8* %cast1)
-
   %ret = call %hs* @ZCMain_main_fun([0 x %hs*]* null, %hs* @GHCziPrim_realWorldzh)
-
-  %cast2 = getelementptr [14 x i8], [14 x i8]* @.str2, i64 0, i64 0
-  call void @puts(i8* %cast2)
-
-  %retCast = bitcast %hs* %ret to %dc*
-  %payloadPtr = getelementptr %dc, %dc* %retCast, i32 0, i32 2, i32 1
-  %payload = load %hs*, %hs** %payloadPtr
-
-  %enterPtr = getelementptr %hs, %hs* %payload, i32 0, i32 0
-  %enter = load %hs* (%hs*)*, %hs* (%hs*)** %enterPtr
-
-  %cast3 = getelementptr [13 x i8], [13 x i8]* @.str3, i64 0, i64 0
-  call void @puts(i8* %cast3)
-
-  %evaledPayload = call %hs* %enter(%hs* %payload)
-
-  %cast4 = getelementptr [15 x i8], [15 x i8]* @.str4, i64 0, i64 0
-  call void @puts(i8* %cast4)
-
-  %payloadDc = bitcast %hs* %evaledPayload to %dc*
-  %tagPtr = getelementptr %dc, %dc* %payloadDc, i32 0, i32 1
-  %tag = load i64, i64* %tagPtr
-
-  %cast5 = getelementptr [10 x i8], [10 x i8]* @.str5, i64 0, i64 0
-  call void @puts(i8* %cast5)
-
-  ret i64 %tag
+  ret i64 0
 }
 
 ; some embedded things
