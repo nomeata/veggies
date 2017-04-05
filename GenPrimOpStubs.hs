@@ -31,10 +31,7 @@ genRTSCall = do
         n <- instrNumber
         let localLabel x = Name $ "if_" ++ show n ++ "_" ++ x
             okLabel = localLabel "ok"
-            okRetLabel = localLabel "ok_ret"
             badLabel = localLabel "bad"
-            badRetLabel = localLabel "bad_ret"
-            joinLabel = localLabel "join"
 
         isEq <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident actualArity) (ident argArity)))
         emitTerm $ TERM_Br (i1, ident isEq) (TYPE_Label, ID_Local okLabel) (TYPE_Label, ID_Local badLabel)
@@ -44,14 +41,12 @@ genRTSCall = do
 
         ret <- emitInstr $ INSTR_Call (hsFunTy, fun)
             [(envTyP 0, ident closPtr), (envTyP 0, ident argsPtr)]
-        namedBr1Block okRetLabel joinLabel
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
 
         startNamedBlock badLabel
-        badRet <- emitInstr $ INSTR_Call (badArityTy, badArityIdent) []
-        namedBr1Block badRetLabel joinLabel
+        ret <- emitInstr $ INSTR_Call (badArityTy, badArityIdent) []
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
 
-        res <- namedPhiBlock hsTyP joinLabel [ (ret, okRetLabel) , (badRet, badRetLabel) ]
-        emitTerm $ TERM_Ret (hsTyP, ident res)
     let def = Coq_mk_definition decl [Name "f", Name "arity", Name "args"] blocks
     emitTL $ TLDef def
   where
