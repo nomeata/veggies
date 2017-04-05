@@ -68,7 +68,7 @@ emitTerm :: Coq_terminator -> LG ()
 emitTerm t = do
     s <- get
     case s of
-        Nothing -> error $ "No block ot finish"
+        Nothing -> error $ "No block to finish"
         Just (n,instrs) ->
             lift $ tell [Coq_mk_block n instrs t (IVoid 0)]
     put Nothing
@@ -88,17 +88,17 @@ emitInstr instr = do
     emitNamedInstr instrId instr
     return (ID_Local instrId)
 
-emitVoidInstr :: Coq_instr -> LG ()
+emitVoidInstr :: HasCallStack => Coq_instr -> LG ()
 emitVoidInstr instr = do
     modify $ \s -> case s of
-            Nothing -> error $ "No block ot finish"
+            Nothing -> error $ "No block to finish"
             Just (n,instrs) -> Just(n, instrs ++ [(IVoid 0, instr)])
     return ()
 
-emitNamedInstr :: Coq_local_id -> Coq_instr -> LG ()
+emitNamedInstr :: HasCallStack => Coq_local_id -> Coq_instr -> LG ()
 emitNamedInstr instrId instr = do
     modify $ \s -> case s of
-            Nothing -> error $ "No block ot finish"
+            Nothing -> error $ "No block to finish"
             Just (n,instrs) -> Just(n, instrs ++ [(IId instrId, instr)])
 
 startNamedBlock :: Coq_local_id -> LG ()

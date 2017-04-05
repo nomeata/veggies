@@ -113,7 +113,7 @@ boxPrimValue valTy boxTy v = do
 
     casted <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident box) boxTyP))
-    codePtr <- emitInstr $ getElemPtr boxTy casted [0,0]
+    codePtr <- emitInstr $ getElemPtr boxTyP casted [0,0]
     emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
 
     setPrimValue valTy boxTy box v
@@ -127,7 +127,7 @@ setPrimValue valTy boxTy box v = do
     casted <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident box) boxTyP))
 
-    valPtr <- emitInstr $ getElemPtr boxTy casted [0,1]
+    valPtr <- emitInstr $ getElemPtr boxTyP casted [0,1]
     emitVoidInstr $ INSTR_Store False (valTyP, ident valPtr) (valTy, v) Nothing
   where boxTyP = TYPE_Pointer boxTy
         valTyP = TYPE_Pointer valTy
@@ -137,7 +137,7 @@ setPrimValue valTy boxTy box v = do
 unboxPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> LG Coq_ident
 unboxPrimValue valTy boxTy v = do
     casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident v) boxTyP))
-    valPtr <- emitInstr $ getElemPtr boxTy casted [0,1]
+    valPtr <- emitInstr $ getElemPtr boxTyP casted [0,1]
     emitInstr $ INSTR_Load False valTy (valTyP, ident valPtr) Nothing
   where boxTyP = TYPE_Pointer boxTy
         valTyP = TYPE_Pointer valTy
