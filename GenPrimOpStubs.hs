@@ -103,7 +103,7 @@ genRTSCall = do
         let papTyP = mkFunClosureTyP 0
         -- Dynamic size calculation :-(
         size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident argArity)))
-        size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Add False False) i64 (SV (VALUE_Integer (3*8))) (ident size)))
+        size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Add False False) i64 (SV (VALUE_Integer (4*8))) (ident size)))
         rawPtr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
         castedPAP <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) papTyP))
