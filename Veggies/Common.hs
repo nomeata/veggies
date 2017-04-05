@@ -16,10 +16,10 @@ genEnterAndEval v = do
     code <- emitInstr $ INSTR_Load False enterFunTyP (TYPE_Pointer enterFunTyP, ident codePtr) Nothing
     emitInstr $ INSTR_Call (enterFunTy, code) [(hsTyP, ident v)]
 
-storeEnv :: Coq_ident -> [Coq_ident] -> LG ()
-storeEnv envIdent names = do
+storeEnv :: Integer -> Coq_ident -> [Coq_ident] -> LG ()
+storeEnv s envIdent names = do
     forM_ (zip [0..] names) $ \(i,n) -> do
-        p <- emitInstr $ getElemPtr (envTyP 0) envIdent [0,i]
+        p <- emitInstr $ getElemPtr (envTyP s) envIdent [0,i]
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident p) (hsTyP, ident n) Nothing
 
 loadEnv :: Coq_ident -> [Coq_raw_id] -> LG ()
@@ -69,7 +69,7 @@ genFunctionCall evaledFun args_locals = do
     argsRawPtr <- emitInstr $ INSTR_Alloca hsTyP (Just (i64, SV (VALUE_Integer arity))) Nothing
     argsPtr <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident argsRawPtr) (envTyP 0)))
-    storeEnv argsPtr args_locals
+    storeEnv 0 argsPtr args_locals
 
     emitInstr $ INSTR_Call (callTy, callIdent)
         [(hsTyP, ident evaledFun), (arityTy, SV (VALUE_Integer arity)), (envTyP 0, ident argsPtr)]

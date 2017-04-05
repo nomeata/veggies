@@ -422,7 +422,7 @@ genLetBind env v rhs | exprIsHNF rhs =
         emitVoidInstr $ INSTR_Store False (arityTyP, ident p) (arityTy, SV (VALUE_Integer arity)) Nothing
 
         envPtr <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,3]
-        storeEnv envPtr [ varIdent env fv | fv <- fvs ]
+        storeEnv env_size envPtr [ varIdent env fv | fv <- fvs ]
 
     genFunCode = do
       emitHsFun LINKAGE_Internal (funRawId v) [ varRawId p | p <- fvs ] [ varRawId p | p <- params ] $ do
