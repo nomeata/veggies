@@ -17,6 +17,10 @@ import Ollvm_ast
 import Debug.Trace
 import GHC.Stack
 
+i1 = TYPE_I 1
+i8 = TYPE_I 8
+i64 = TYPE_I 64
+
 data TopLevelThing
     = TLAlias  Coq_alias
     | TLGlobal Coq_global

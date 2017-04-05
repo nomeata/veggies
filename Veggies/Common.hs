@@ -36,50 +36,40 @@ emitHsFun linkage fun_name fv_names arg_names body = do
         ret <- body
         emitTerm $ TERM_Ret (hsTyP, ident ret)
     emitTL $ TLDef $ mkHsFunDefinition linkage fun_name blocks
+  where
+    mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_block] -> Coq_definition
+    mkHsFunDefinition linkage n blocks = Coq_mk_definition
+        (mkHsFunDeclaration linkage n)
+        [closRawId, argsRawId]
+        blocks
+
+    mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> Coq_declaration
+    mkHsFunDeclaration linkage n = Coq_mk_declaration
+        n
+        hsFunTy
+        ([],[[],[]])
+        (Just linkage)
+        Nothing
+        Nothing
+        Nothing
+        []
+        Nothing
+        Nothing
+        Nothing
 
 
 genFunctionCall :: Coq_ident -> [Coq_ident] -> LG Coq_ident
 genFunctionCall f [] = error $ "genFunctionCall" -- ++ show f
 genFunctionCall evaledFun args_locals = do
     let arity = fromIntegral (length args_locals)
-    let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy 0)
-
-    castedFun <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) thisFunClosTyP))
-    funPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
-    fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
-
-    arityPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,2]
-    actualArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
-
-    n <- instrNumber
-    let localLabel x = Name $ "if_" ++ show n ++ "_" ++ x
-        okLabel = localLabel "ok"
-        okRetLabel = localLabel "ok_ret"
-        badLabel = localLabel "bad"
-        badRetLabel = localLabel "bad_ret"
-        joinLabel = localLabel "join"
-
-    emitTerm $ TERM_Switch (arityTy,ident actualArity) (TYPE_Label, ID_Local badLabel)
-        [ ((arityTy, SV (VALUE_Integer arity)), (TYPE_Label, ID_Local okLabel)) ]
-
-    startNamedBlock okLabel
-    closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
 
     argsRawPtr <- emitInstr $ INSTR_Alloca hsTyP (Just (i64, SV (VALUE_Integer arity))) Nothing
     argsPtr <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident argsRawPtr) (envTyP 0)))
     storeEnv argsPtr args_locals
 
-    ret <- emitInstr $ INSTR_Call (hsFunTy, fun)
-        [(envTyP 0, ident closPtr), (envTyP 0, ident argsPtr)]
-    namedBr1Block okRetLabel joinLabel
-
-    startNamedBlock badLabel
-    badRet <- emitInstr $ INSTR_Call (badArityTy, badArityIdent) []
-    namedBr1Block badRetLabel joinLabel
-
-    namedPhiBlock hsTyP joinLabel [ (ret, okRetLabel) , (badRet, badRetLabel) ] 
+    emitInstr $ INSTR_Call (callTy, callIdent)
+        [(hsTyP, ident evaledFun), (arityTy, SV (VALUE_Integer arity)), (envTyP 0, ident argsPtr)]
 
 genMalloc :: Coq_typ -> LG Coq_ident
 genMalloc t = do

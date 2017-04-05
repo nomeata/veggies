@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Ast2Ast (convModule) where
 
 import Data.Char
@@ -99,11 +100,11 @@ instance Conv Coq_value (Type -> Constant) where
         = AC.BitCast (conv o (conv ty1)) (conv ty2)
     conv (SV (VALUE_Cstring str))         _ = AC.Array (IntegerType 8) elems
         where elems = [ (AC.Int 8 (fromIntegral (ord c))) | c <- str ]
+    conv e t = error $ show (t,e)
 
 instance Conv (Expr Coq_value) (Type -> Operand) where
     conv (VALUE_Ident (ID_Local  n)) t = LocalReference t (conv n)
     conv v                           t = ConstantOperand (conv (SV v) t)
-
 
 instance Conv Coq_tvalue Operand where
     conv (t,SV v) = conv v (conv t)
@@ -333,3 +334,40 @@ zip3Safe _ _ _  = error "zip3Safe"
 zip2Safe [] [] = []
 zip2Safe (x:xs) (y:ys) = (x,y) : zip2Safe xs ys
 zip2Safe _ _  = error "zip2Safe"
+
+
+
+
+{- For debugging -}
+deriving instance Show Coq_alias
+deriving instance Show Coq_raw_id
+deriving instance Show Coq_type_decl
+deriving instance Show Coq_typ
+deriving instance Show Coq_ident
+deriving instance Show Coq_fn_attr
+deriving instance Show Coq_linkage
+deriving instance Show Coq_dll_storage
+deriving instance Show Coq_cconv
+deriving instance Show Coq_declaration
+deriving instance Show Coq_param_attr
+deriving instance Show Coq_visibility
+deriving instance Show Coq_icmp
+deriving instance Show Coq_ibinop
+deriving instance Show Coq_fcmp
+deriving instance Show Coq_fbinop
+deriving instance Show Coq_fast_math
+deriving instance Show Coq_conversion_type
+deriving instance Show a => Show (Ollvm_ast.Expr a)
+deriving instance Show Coq_value
+deriving instance Show Coq_terminator
+deriving instance Show Coq_instr
+deriving instance Show Coq_instr_id
+deriving instance Show Coq_block
+deriving instance Show Coq_definition
+deriving instance Show Coq_toplevel_entity
+deriving instance Show Coq_thread_local_storage
+deriving instance Show Coq_global
+deriving instance Show Coq_metadata
+deriving instance Show Coq_modul
+
+

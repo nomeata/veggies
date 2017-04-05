@@ -1,5 +1,4 @@
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE StandaloneDeriving #-}
 module Veggies.CodeGen where
 
 import Data.List
@@ -208,39 +207,6 @@ genDataConWorker dc = do
     paramName n = "dcArg_" ++ show n
     param_raw_ids = [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
 
-
-{- For debugging
-deriving instance Show Coq_alias
-deriving instance Show Coq_raw_id
-deriving instance Show Coq_type_decl
-deriving instance Show Coq_typ
-deriving instance Show Coq_ident
-deriving instance Show Coq_fn_attr
-deriving instance Show Coq_linkage
-deriving instance Show Coq_dll_storage
-deriving instance Show Coq_cconv
-deriving instance Show Coq_declaration
-deriving instance Show Coq_param_attr
-deriving instance Show Coq_visibility
-deriving instance Show Coq_icmp
-deriving instance Show Coq_ibinop
-deriving instance Show Coq_fcmp
-deriving instance Show Coq_fbinop
-deriving instance Show Coq_fast_math
-deriving instance Show Coq_conversion_type
-deriving instance Show a => Show (Ollvm_ast.Expr a)
-deriving instance Show Coq_value
-deriving instance Show Coq_terminator
-deriving instance Show Coq_instr
-deriving instance Show Coq_instr_id
-deriving instance Show Coq_block
-deriving instance Show Coq_definition
-deriving instance Show Coq_toplevel_entity
-deriving instance Show Coq_thread_local_storage
-deriving instance Show Coq_global
-deriving instance Show Coq_metadata
-deriving instance Show Coq_modul
--}
 
 collectMoreValBinders :: CoreExpr -> ([Id], CoreExpr)
 collectMoreValBinders = go []

@@ -104,12 +104,10 @@ mkIndTy = TYPE_Struct [ enterFunTyP, hsTyP ]
 indTy = TYPE_Identified (ID_Global (Name "ind"))
 indTyP = TYPE_Pointer indTy
 
-i64 = TYPE_I 64
 mkIntBoxTy = TYPE_Struct [ enterFunTyP, i64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
-i8 = TYPE_I 8
 ptrTy = TYPE_Pointer i8
 mkPtrBoxTy = TYPE_Struct [ enterFunTyP, ptrTy ]
 ptrBoxTy = TYPE_Identified (ID_Global (Name "ptr"))
@@ -142,25 +140,6 @@ dummyBody = [ Coq_mk_block (Anon 0)
                 (IVoid 1)
             ]
 
-mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_block] -> Coq_definition
-mkHsFunDefinition linkage n blocks = Coq_mk_definition
-    (mkHsFunDeclaration linkage n)
-    [closRawId, argsRawId]
-    blocks
-
-mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> Coq_declaration
-mkHsFunDeclaration linkage n = Coq_mk_declaration
-    n
-    hsFunTy
-    ([],[[],[]])
-    (Just linkage)
-    Nothing
-    Nothing
-    Nothing
-    []
-    Nothing
-    Nothing
-    Nothing
 
 mkEnterFunDefinition :: Coq_linkage -> Coq_global_id -> [Coq_block] -> Coq_definition
 mkEnterFunDefinition linkage n blocks = Coq_mk_definition
@@ -222,6 +201,13 @@ returnArgIdent = ID_Global (Name "rts_returnArg")
 
 indirectionIdent :: Coq_ident
 indirectionIdent = ID_Global (Name "rts_indirection")
+
+callIdent :: Coq_ident
+callIdent = ID_Global callRawName
+callRawName :: Coq_raw_id
+callRawName = Name "rts_call"
+callTy = TYPE_Function hsTyP [hsTyP, arityTy, envTyP 0]
+callTyP = TYPE_Pointer callTy
 
 cStrTy :: Coq_typ
 cStrTy = TYPE_Pointer i8

@@ -13,6 +13,60 @@ import Veggies.Common
 import qualified Ast2Ast as LLVM
 import qualified Ast2Assembly as LLVM
 
+
+
+genRTSCall :: G ()
+genRTSCall = do
+    blocks <- runLG $ do
+        let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy 0)
+
+        castedFun <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) thisFunClosTyP))
+        funPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
+        fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
+
+        arityPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,2]
+        actualArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
+
+        n <- instrNumber
+        let localLabel x = Name $ "if_" ++ show n ++ "_" ++ x
+            okLabel = localLabel "ok"
+            okRetLabel = localLabel "ok_ret"
+            badLabel = localLabel "bad"
+            badRetLabel = localLabel "bad_ret"
+            joinLabel = localLabel "join"
+
+        isEq <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident actualArity) (ident argArity)))
+        emitTerm $ TERM_Br (i1, ident isEq) (TYPE_Label, ID_Local okLabel) (TYPE_Label, ID_Local badLabel)
+
+        startNamedBlock okLabel
+        closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
+
+        ret <- emitInstr $ INSTR_Call (hsFunTy, fun)
+            [(envTyP 0, ident closPtr), (envTyP 0, ident argsPtr)]
+        namedBr1Block okRetLabel joinLabel
+
+        startNamedBlock badLabel
+        badRet <- emitInstr $ INSTR_Call (badArityTy, badArityIdent) []
+        namedBr1Block badRetLabel joinLabel
+
+        res <- namedPhiBlock hsTyP joinLabel [ (ret, okRetLabel) , (badRet, badRetLabel) ]
+        emitTerm $ TERM_Ret (hsTyP, ident res)
+    let def = Coq_mk_definition decl [Name "f", Name "arity", Name "args"] blocks
+    emitTL $ TLDef def
+  where
+    evaledFun = ID_Local (Name "f")
+    argArity = ID_Local (Name "arity")
+    argsPtr = ID_Local (Name "args")
+
+    decl = Coq_mk_declaration
+        callRawName
+        callTy
+        ([], [[],[],[]])
+        (Just LINKAGE_External)
+        Nothing Nothing Nothing [] Nothing Nothing Nothing
+
+
 genNullPtrBox :: G ()
 genNullPtrBox = emitAliasedGlobal LINKAGE_External nullPtrBoxRawId hsTy ptrBoxTy $
         SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
@@ -295,6 +349,7 @@ genFFIFunc name | Just (arity, body) <- ffiBody name = mkPrimFun name arity body
 
 primModule :: Coq_modul
 primModule = mkCoqModul "GHC.Prim" $ runG $ do
+    genRTSCall
     mapM_ emitTL defaultTyDecls
     genStaticIntLits
     genNullPtrBox
