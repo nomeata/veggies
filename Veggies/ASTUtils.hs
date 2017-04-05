@@ -19,7 +19,9 @@ import GHC.Stack
 
 i1 = TYPE_I 1
 i8 = TYPE_I 8
+i32 = TYPE_I 32
 i64 = TYPE_I 64
+ptrTy = TYPE_Pointer i8
 
 data TopLevelThing
     = TLAlias  Coq_alias
@@ -45,10 +47,13 @@ noop ty val = INSTR_Op (SV (OP_Conversion Bitcast ty val ty))
 
 getElemPtr :: Coq_typ -> Coq_ident -> [Integer] -> Coq_instr
 getElemPtr t v path
-    = INSTR_Op (SV (OP_GetElementPtr t (t, ident v) [(TYPE_I 32, SV (VALUE_Integer n))| n <- path]))
+    = INSTR_Op (SV (OP_GetElementPtr t (t, ident v) [(i32, SV (VALUE_Integer n))| n <- path]))
 
-mallocRetTy = TYPE_Pointer (TYPE_I 8)
-mallocTy = TYPE_Function mallocRetTy [TYPE_I 64]
+memcpyTy = TYPE_Function TYPE_Void [ptrTy, ptrTy, i64, i64, i1]
+memcpyIdent = ID_Global (Name "llvm.memcpy.p0i8.p0i8.i64")
+
+mallocRetTy = ptrTy
+mallocTy = TYPE_Function mallocRetTy [i64]
 mallocIdent = ID_Global (Name "malloc")
 
 mallocDecl :: TopLevelThing
@@ -66,7 +71,7 @@ mallocDecl = TLDecl $ Coq_mk_declaration
     Nothing
 
 exitRetTy = TYPE_Void
-exitTy = TYPE_Function exitRetTy [TYPE_I 64]
+exitTy = TYPE_Function exitRetTy [i64]
 exitIdent = ID_Global (Name "exit")
 
 exitDecl :: TopLevelThing
@@ -84,7 +89,7 @@ exitDecl = TLDecl $ Coq_mk_declaration
     Nothing
 
 putsRetTy = TYPE_Void
-putsTy = TYPE_Function putsRetTy [TYPE_Pointer (TYPE_I 8)]
+putsTy = TYPE_Function putsRetTy [ptrTy]
 putsIdent = ID_Global (Name "puts")
 
 mkAliasedGlobal linkage name tmpName exportedTy realTy val =

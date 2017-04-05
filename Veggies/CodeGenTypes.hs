@@ -53,10 +53,11 @@ hsTyP = TYPE_Pointer (TYPE_Identified (ID_Global (Name "hs")))
 enterFunTy  = TYPE_Function hsTyP [hsTyP]
 enterFunTyP = TYPE_Pointer enterFunTy
 
--- A haskell function; takes an environment and a vector of arguments
--- The latter has the right number of argument (matching the arity)
+-- A haskell function; takes its own closure (in case there is an environment),
+-- and a pointer to an vector of arguments. The latter has the right number of
+-- arguments (matching the arity in the function closure).
 hsFunTy :: Coq_typ
-hsFunTy = TYPE_Function hsTyP [ envTyP 0, envTyP 0 ]
+hsFunTy = TYPE_Function hsTyP [ hsTyP, envTyP 0 ]
 
 hsFunTyP :: Coq_typ
 hsFunTyP = TYPE_Pointer hsFunTy
@@ -108,7 +109,6 @@ mkIntBoxTy = TYPE_Struct [ enterFunTyP, i64 ]
 intBoxTy = TYPE_Identified (ID_Global (Name "int"))
 intBoxTyP = TYPE_Pointer intBoxTy
 
-ptrTy = TYPE_Pointer i8
 mkPtrBoxTy = TYPE_Struct [ enterFunTyP, ptrTy ]
 ptrBoxTy = TYPE_Identified (ID_Global (Name "ptr"))
 ptrBoxTyP = TYPE_Pointer ptrBoxTy
@@ -208,6 +208,11 @@ callRawName :: Coq_raw_id
 callRawName = Name "rts_call"
 callTy = TYPE_Function hsTyP [hsTyP, arityTy, envTyP 0]
 callTyP = TYPE_Pointer callTy
+
+papFunIdent :: Coq_ident
+papFunIdent = ID_Global papFunRawName
+papFunRawName :: Coq_raw_id
+papFunRawName = Name "rts_pap"
 
 cStrTy :: Coq_typ
 cStrTy = TYPE_Pointer i8

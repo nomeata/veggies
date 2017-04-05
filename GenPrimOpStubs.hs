@@ -17,7 +17,53 @@ import qualified Ast2Ast as LLVM
 import qualified Ast2Assembly as LLVM
 import qualified LLVM.Pretty as LLVM
 
+genPAPFun :: G ()
+genPAPFun = emitHsFun LINKAGE_External papFunRawName [] [] $ do
+    -- find out the PAP arity (missing arguments)
+    castedPAP <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (mkFunClosureTyP 0)))
+    arityPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,2]
+    papArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
 
+    -- find out the function arity (all arguments)
+    evaledFunPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,0]
+    evaledFun <- emitInstr $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident evaledFunPtr) Nothing
+    castedFun <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) (mkFunClosureTyP 0)))
+    arityPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedFun [0,2]
+    funArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
+
+    -- The difference is the number of arguments in the PAP
+    diffArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident funArity) (ident papArity)))
+
+    -- Allocate argument array
+    argsRawPtr <- emitInstr $ INSTR_Alloca hsTyP (Just (i64, ident funArity)) Nothing
+    argsPtr <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident argsRawPtr) (envTyP 0)))
+
+    -- Assemble argument array, part 1: Arguments from PAP
+    srcPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,1]
+    srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
+    destPtr <- emitInstr $ getElemPtr (envTyP 0) argsPtr [0,0]
+    destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
+    nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident diffArity)))
+    emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
+            [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
+             (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+
+    -- Assemble argument array, part 2: Arguments from caller
+    srcPtr <- emitInstr $ getElemPtr (envTyP 0) argsIdent [0,0]
+    srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
+    destPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, ident argsPtr) [(i64, SV (VALUE_Integer 0)), (i64, ident diffArity)]))
+    destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
+    nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident papArity)))
+    emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
+            [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
+             (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+
+    funPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedFun [0,1]
+    fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
+    emitInstr $ INSTR_Call (hsFunTy, fun) [(hsTyP, ident evaledFun), (envTyP 0, ident argsPtr)]
 
 genRTSCall :: G ()
 genRTSCall = do
@@ -30,25 +76,76 @@ genRTSCall = do
         fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
 
         arityPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,2]
-        actualArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
+        funArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
 
-        n <- instrNumber
-        let localLabel x = Name $ "if_" ++ show n ++ "_" ++ x
-            okLabel = localLabel "ok"
-            badLabel = localLabel "bad"
+        let eqL   = Name "eq"
+            neqL  = Name "neq"
+            fewL  = Name "few"
+            manyL = Name "many"
 
-        isEq <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident actualArity) (ident argArity)))
-        emitTerm $ TERM_Br (i1, ident isEq) (TYPE_Label, ID_Local okLabel) (TYPE_Label, ID_Local badLabel)
+        isEq <- emitInstr $ INSTR_Op (SV (OP_ICmp Eq i64 (ident argArity) (ident funArity)))
+        emitTerm $ TERM_Br (i1, ident isEq) (TYPE_Label, ID_Local eqL) (TYPE_Label, ID_Local neqL)
 
-        startNamedBlock okLabel
-        closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
-
-        ret <- emitInstr $ INSTR_Call (hsFunTy, fun)
-            [(envTyP 0, ident closPtr), (envTyP 0, ident argsPtr)]
+        -- Arity matches
+        startNamedBlock eqL
+        ret <- emitInstr $ INSTR_Call (hsFunTy, fun) [(hsTyP, ident evaledFun), (envTyP 0, ident argsPtr)]
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 
-        startNamedBlock badLabel
-        ret <- emitInstr $ INSTR_Call (badArityTy, badArityIdent) []
+        -- Arity does not match
+        startNamedBlock neqL
+        isFew <- emitInstr $ INSTR_Op (SV (OP_ICmp Slt i64 (ident funArity) (ident argArity)))
+        emitTerm $ TERM_Br (i1, ident isFew) (TYPE_Label, ID_Local fewL) (TYPE_Label, ID_Local manyL)
+
+        -- Too few arguments
+        startNamedBlock fewL
+        -- Allocate a PAP
+        let papTy = mkFunClosureTy 0
+        let papTyP = mkFunClosureTyP 0
+        -- Dynamic size calculation :-(
+        size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident argArity)))
+        size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Add False False) i64 (SV (VALUE_Integer (3*8))) (ident size)))
+        rawPtr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+        castedPAP <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) papTyP))
+        codePtr <- emitInstr $ getElemPtr papTyP castedPAP [0,0]
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
+        funPtr <- emitInstr $ getElemPtr papTyP castedPAP [0,1]
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsFunTyP, ident funPtr) (hsFunTyP, ident papFunIdent) Nothing
+        diffArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident funArity) (ident argArity)))
+        arityPtr <- emitInstr $ getElemPtr papTyP castedPAP [0,2]
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer i64, ident arityPtr) (i64, ident diffArity) Nothing
+
+        -- Save function
+        firstPayloadPtr <- emitInstr $ getElemPtr papTyP castedPAP [0,3,0]
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident firstPayloadPtr) (hsTyP, ident evaledFun) Nothing
+
+        -- Save arguments
+        srcPtr <- emitInstr $ getElemPtr (envTyP 0) argsPtr [0,0]
+        srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
+        destPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,1]
+        destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
+        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident diffArity)))
+        emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
+                [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
+                 (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+
+        pap <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) hsTyP))
+        emitTerm $ TERM_Ret (hsTyP, ident pap)
+
+        -- Too many arguments
+        startNamedBlock manyL
+        -- Call with parameter array, taking the first few arguments (same pointer)
+        newFun <- emitInstr $ INSTR_Call (hsFunTy, fun)
+            [(hsTyP, ident evaledFun), (envTyP 0, ident argsPtr)]
+        -- Calculate remaining arity and arguments
+        leftOverArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident argArity) (ident funArity)))
+        firstArgPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, ident argsPtr) [(i64, SV (VALUE_Integer 0)), (i64, ident funArity)]))
+        leftOverArgs <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident firstArgPtr) (envTyP 0)))
+        -- Call the returned function
+        ret <- emitInstr $ INSTR_Call (callTy, callIdent)
+            [(hsTyP, ident newFun), (arityTy, ident leftOverArity), (envTyP 0, ident leftOverArgs)]
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 
     let def = Coq_mk_definition decl [Name "f", Name "arity", Name "args"] blocks
@@ -349,6 +446,7 @@ genFFIFunc name | Just (arity, body) <- ffiBody name = mkPrimFun name arity body
 primModule :: Coq_modul
 primModule = mkCoqModul "GHC.Prim" $ runG $ do
     genRTSCall
+    genPAPFun
     mapM_ emitTL defaultTyDecls
     genStaticIntLits
     genNullPtrBox

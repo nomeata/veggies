@@ -31,7 +31,10 @@ loadEnv envIdent names = do
 emitHsFun :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> [Coq_raw_id] -> LG Coq_ident -> G ()
 emitHsFun linkage fun_name fv_names arg_names body = do
     blocks <- runLG $ do
-        loadEnv closIdent fv_names
+        casted <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (mkFunClosureTyP 0)))
+        fv_env <- emitInstr $ getElemPtr (mkFunClosureTyP 0) casted [0,3]
+        loadEnv fv_env fv_names
         loadEnv argsIdent arg_names
         ret <- body
         emitTerm $ TERM_Ret (hsTyP, ident ret)
