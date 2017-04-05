@@ -32,11 +32,13 @@ cp -v boot-data/settings boot-data/platformConstants $dir
 
 ghc -O -package ghc \
     -ivellvm-ast-pp/ \
+    -illvm-hs-pretty/src \
     Main.hs \
     -o $dir/libexec/veggies
 
 ghc -O -package ghc \
     -ivellvm-ast-pp/ \
+    -illvm-hs-pretty/src \
     GenPrimOpStubs.hs \
     -o $dir/libexec/gen-primop-stubs
 

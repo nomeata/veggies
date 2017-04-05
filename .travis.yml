@@ -29,6 +29,7 @@ install:
     - cabal update
     - cabal install groom
     - cabal install llvm-hs
+    - cabal install wl-pprint-text
 
 script:
     - ./boot.sh out/

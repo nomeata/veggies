@@ -1,0 +1,3 @@
+[submodule "llvm-hs-pretty"]
+	path = llvm-hs-pretty
+	url = https://github.com/nomeata/llvm-hs-pretty
