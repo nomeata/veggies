@@ -156,11 +156,11 @@ genStaticVal env v rhs | exprIsHNF rhs = do
     unless (arity > 0) $ pprPanic "genStaticVal" (ppr v <+> ppr rhs)
     genTopLvlFunction env v rhs
 
-    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkFunClosureTy arity 0) $
-        SV $ VALUE_Struct [ (enterFunTyP,                     ident returnArgIdent)
-                          , (TYPE_Pointer (hsFunTy arity 0) , ident (funIdent env v))
-                          , (TYPE_I 64, SV (VALUE_Integer arity))
-                          , (envTy 0 , SV (VALUE_Array []))
+    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkFunClosureTy 0) $
+        SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                          , (hsFunTyP,    ident (funIdent env v))
+                          , (TYPE_I 64,   SV (VALUE_Integer arity))
+                          , (envTy 0 ,    SV (VALUE_Array []))
                           ]
   where
     arity = getIdArity env v
@@ -170,7 +170,7 @@ genStaticVal env v rhs = do
     blocks <- runLG $ do
         ret <- genExpr env rhs
         -- TODO: update thunk here
-        returnFromFunction ret
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
     emitTL $ TLDef $ mkEnterFunDefinition
         LINKAGE_Internal
         (funRawId v)
@@ -187,30 +187,18 @@ genTopLvlFunction env v rhs
     | length params /= fromIntegral (getIdArity env v)
     = pprPanic "genTopLvlFunction" (ppr v <+> ppr rhs <+> ppr (fromIntegral (getIdArity env v)::Int))
     | otherwise
-    = do
-      blocks <- runLG (genExpr env body >>= returnFromFunction)
-      emitTL $ TLDef $ mkHsFunDefinition
-            LINKAGE_External
-            (funRawId v)
-            [ varRawId p | p <- params ]
-            0
-            blocks
+    = emitHsFun LINKAGE_External (funRawId v) [] [ varRawId p | p <- params ] $ do
+        genExpr env body
   where
     (params, body) = collectMoreValBinders rhs
 
 
 genDataConWorker :: DataCon -> G ()
 genDataConWorker dc = do
-    blocks <- runLG $ do
+    emitHsFun linkage (funRawId (dataConWorkId dc)) [] param_raw_ids $ do
         (dcIdent, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
-        fill [ ID_Local (Name (paramName n)) | n <- [0..dataConRepArity dc - 1]]
-        returnFromFunction dcIdent
-
-    emitTL $ TLDef $ mkHsFunDefinition linkage
-        (funRawId (dataConWorkId dc))
-        [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
-        0
-        blocks
+        fill $ map ID_Local param_raw_ids
+        return dcIdent
   where
     linkage | isUnboxedTupleCon dc -- || isUnboxedSumCon dc -- see Id.hasNoBinding
             = LINKAGE_Private
@@ -218,6 +206,7 @@ genDataConWorker dc = do
             = LINKAGE_External
 
     paramName n = "dcArg_" ++ show n
+    param_raw_ids = [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
 
 
 {- For debugging
@@ -252,10 +241,6 @@ deriving instance Show Coq_global
 deriving instance Show Coq_metadata
 deriving instance Show Coq_modul
 -}
-
-returnFromFunction :: Coq_ident -> LG ()
-returnFromFunction lid = emitTerm (TERM_Ret (hsTyP, ident lid))
-
 
 collectMoreValBinders :: CoreExpr -> ([Id], CoreExpr)
 collectMoreValBinders = go []
@@ -445,11 +430,8 @@ genLetBind env v rhs | exprIsHNF rhs =
     env_size = fromIntegral $ length fvs
 
     fvs = filter isId $ exprsFreeVarsList [rhs]
-    thisFunClosureTy = mkFunClosureTy arity env_size
+    thisFunClosureTy = mkFunClosureTy env_size
     thisFunClosureTyP = TYPE_Pointer thisFunClosureTy
-
-    thisFunTy = hsFunTy arity env_size
-    thisFunTyP = TYPE_Pointer thisFunTy
 
     alloc = do
         closureRawPtr <- genMalloc thisFunClosureTyP
@@ -468,31 +450,18 @@ genLetBind env v rhs | exprIsHNF rhs =
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident p) (enterFunTyP, ident returnArgIdent) Nothing
 
         p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,1]
-        emitVoidInstr $ INSTR_Store False (TYPE_Pointer thisFunTyP, ident p) (thisFunTyP, ident (funIdent env v)) Nothing
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsFunTyP, ident p) (hsFunTyP, ident (funIdent env v)) Nothing
 
         p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,2]
         emitVoidInstr $ INSTR_Store False (arityTyP, ident p) (arityTy, SV (VALUE_Integer arity)) Nothing
 
-        forM_ (zip [0..] fvs) $ \(n,fv) -> do
-            p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,3,n]
-            emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident p) (hsTyP, ident (varIdent env fv)) Nothing
+        envPtr <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,3]
+        storeEnv envPtr [ varIdent env fv | fv <- fvs ]
 
     genFunCode = do
-      blocks <- runLG $ do
-        -- load free variables
-        forM_ (zip [0..] fvs) $ \(n,fv) -> do
-            p <- emitInstr $ getElemPtr (envTyP env_size) closIdent [0,n]
-            emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
-        -- evaluate body
-        res <- genExpr env body
+      emitHsFun LINKAGE_Internal (funRawId v) [ varRawId p | p <- fvs ] [ varRawId p | p <- params ] $ do
+        genExpr env body
         -- TODO: update thunk here
-        returnFromFunction res
-      emitTL $ TLDef $ mkHsFunDefinition
-            LINKAGE_Internal
-            (funRawId v)
-            [ varRawId p | p <- params ]
-            env_size
-            blocks
 
 -- A let-bound thunk
 genLetBind env v rhs = alloc
@@ -528,7 +497,7 @@ genLetBind env v rhs = alloc
         -- evaluate body
         res <- genExpr env rhs
         -- TODO: update thunk here
-        returnFromFunction res
+        emitTerm $ TERM_Ret (hsTyP, ident res)
       emitTL $ TLDef $ mkEnterFunDefinition
             LINKAGE_Internal
             (funRawId v)

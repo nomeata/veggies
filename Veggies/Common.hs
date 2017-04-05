@@ -16,18 +16,38 @@ genEnterAndEval v = do
     code <- emitInstr $ INSTR_Load False enterFunTyP (TYPE_Pointer enterFunTyP, ident codePtr) Nothing
     emitInstr $ INSTR_Call (enterFunTy, code) [(hsTyP, ident v)]
 
+storeEnv :: Coq_ident -> [Coq_ident] -> LG ()
+storeEnv envIdent names = do
+    forM_ (zip [0..] names) $ \(i,n) -> do
+        p <- emitInstr $ getElemPtr (envTyP 0) envIdent [0,i]
+        emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident p) (hsTyP, ident n) Nothing
+
+loadEnv :: Coq_ident -> [Coq_raw_id] -> LG ()
+loadEnv envIdent names = do
+    forM_ (zip [0..] names) $ \(i,n) -> do
+        p <- emitInstr $ getElemPtr (envTyP 0) envIdent [0,i]
+        emitNamedInstr n $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
+
+emitHsFun :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> [Coq_raw_id] -> LG Coq_ident -> G ()
+emitHsFun linkage fun_name fv_names arg_names body = do
+    blocks <- runLG $ do
+        loadEnv closIdent fv_names
+        loadEnv argsIdent arg_names
+        ret <- body
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
+    emitTL $ TLDef $ mkHsFunDefinition linkage fun_name blocks
+
+
 genFunctionCall :: Coq_ident -> [Coq_ident] -> LG Coq_ident
 genFunctionCall f [] = error $ "genFunctionCall" -- ++ show f
 genFunctionCall evaledFun args_locals = do
     let arity = fromIntegral (length args_locals)
-    let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy arity 0)
-    let thisFunTy = hsFunTy arity 0
-    let thisFunTyP = TYPE_Pointer thisFunTy
+    let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy 0)
 
     castedFun <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) thisFunClosTyP))
     funPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
-    fun <- emitInstr $ INSTR_Load False thisFunTyP (TYPE_Pointer thisFunTyP, ident funPtr) Nothing
+    fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
 
     arityPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,2]
     actualArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
@@ -46,8 +66,13 @@ genFunctionCall evaledFun args_locals = do
     startNamedBlock okLabel
     closPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,3]
 
-    ret <- emitInstr $ INSTR_Call (thisFunTy, fun) $
-        (envTyP 0, ident closPtr) : [(hsTyP, ident a) | a <- args_locals ]
+    argsRawPtr <- emitInstr $ INSTR_Alloca hsTyP (Just (i64, SV (VALUE_Integer arity))) Nothing
+    argsPtr <- emitInstr $
+        INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident argsRawPtr) (envTyP 0)))
+    storeEnv argsPtr args_locals
+
+    ret <- emitInstr $ INSTR_Call (hsFunTy, fun)
+        [(envTyP 0, ident closPtr), (envTyP 0, ident argsPtr)]
     namedBr1Block okRetLabel joinLabel
 
     startNamedBlock badLabel

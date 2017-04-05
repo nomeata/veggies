@@ -49,13 +49,18 @@ hsTy = TYPE_Identified (ID_Global (Name "hs"))
 hsTyP :: Coq_typ
 hsTyP = TYPE_Pointer (TYPE_Identified (ID_Global (Name "hs")))
 
--- An explicit, global function to call
-hsFunTy :: Integer -> Integer -> Coq_typ
-hsFunTy n m = TYPE_Function hsTyP (envTyP m : replicate (fromIntegral n) hsTyP)
-
 -- Entering a closure
 enterFunTy  = TYPE_Function hsTyP [hsTyP]
 enterFunTyP = TYPE_Pointer enterFunTy
+
+-- A haskell function; takes an environment and a vector of arguments
+-- The latter has the right number of argument (matching the arity)
+hsFunTy :: Coq_typ
+hsFunTy = TYPE_Function hsTyP [ envTyP 0, envTyP 0 ]
+
+hsFunTyP :: Coq_typ
+hsFunTyP = TYPE_Pointer hsFunTy
+
 
 mkThunkTy :: Integer -> Coq_typ
 mkThunkTy n = TYPE_Struct [ enterFunTyP, envTy n' ]
@@ -84,13 +89,13 @@ mkDataConTyP n = TYPE_Pointer (mkDataConTy n)
 envTy m = TYPE_Array m hsTyP
 envTyP m = TYPE_Pointer (envTy m)
 
-mkFunClosureTy n m =
+mkFunClosureTy m =
     TYPE_Struct [ enterFunTyP
-                , TYPE_Pointer (hsFunTy n m)
+                , hsFunTyP
                 , arityTy
                 , envTy m
                 ]
-mkFunClosureTyP n m = TYPE_Pointer (mkFunClosureTy n m)
+mkFunClosureTyP m = TYPE_Pointer (mkFunClosureTy m)
 
 dataConTy = TYPE_Identified (ID_Global (Name "dc"))
 dataConTyP = TYPE_Pointer dataConTy
@@ -137,17 +142,17 @@ dummyBody = [ Coq_mk_block (Anon 0)
                 (IVoid 1)
             ]
 
-mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Integer -> [Coq_block] -> Coq_definition
-mkHsFunDefinition linkage n param_names env_arity blocks = Coq_mk_definition
-    (mkHsFunDeclaration linkage n param_names env_arity)
-    (closRawId :  param_names)
+mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_block] -> Coq_definition
+mkHsFunDefinition linkage n blocks = Coq_mk_definition
+    (mkHsFunDeclaration linkage n)
+    [closRawId, argsRawId]
     blocks
 
-mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> Integer -> Coq_declaration
-mkHsFunDeclaration linkage n param_names env_arity = Coq_mk_declaration
+mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> Coq_declaration
+mkHsFunDeclaration linkage n = Coq_mk_declaration
     n
-    (hsFunTy (fromIntegral (length param_names)) env_arity)
-    ([],([] : map (const []) param_names))
+    hsFunTy
+    ([],[[],[]])
     (Just linkage)
     Nothing
     Nothing
@@ -195,6 +200,11 @@ closIdent :: Coq_ident
 closIdent = ID_Local closRawId
 closRawId :: Coq_raw_id
 closRawId = Name "clos"
+
+argsIdent :: Coq_ident
+argsIdent = ID_Local argsRawId
+argsRawId :: Coq_raw_id
+argsRawId = Name "args"
 
 defaultTyDecls :: [TopLevelThing]
 defaultTyDecls =
