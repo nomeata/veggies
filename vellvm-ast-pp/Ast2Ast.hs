@@ -150,9 +150,9 @@ instance Conv Coq_instr Instruction where
         = A.Load volatile (conv o) Nothing (maybe 0 fromIntegral mbAlign) []
     conv (INSTR_Call (t,f) tos)
         = A.Call Nothing CC.C [] (Right (conv (TYPE_Pointer t,f))) [ (conv to, []) | to <- tos ] [] []
-    conv (INSTR_Phi t preds )
+    conv (INSTR_Phi t preds)
         = A.Phi (conv t) [ (conv (t,o), conv l)
-                         | (o,SV (VALUE_Ident (ID_Local l))) <- preds ] []
+                         | (ID_Local l,o) <- preds ] []
     conv (INSTR_Alloca t mbCount mbAlign)
         = A.Alloca (conv t) (fmap conv mbCount) (maybe 0 fromIntegral mbAlign) []
     {-

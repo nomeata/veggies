@@ -277,7 +277,7 @@ genExpr env (Case scrut b _ alts) = do
         startNamedBlock (caseAltEntryRawId b (tagOf ac))
         ret <- genAltBody pats rhs
         namedBr1Block (caseAltExitRawId b (tagOf ac)) (caseAltJoinRawId b)
-        return (ret, caseAltExitRawId b (tagOf ac))
+        return (ident ret, ID_Local (caseAltExitRawId b (tagOf ac)))
 
     genAltBody pats rhs = do
         forM_ (zip [0..] (filter isId pats)) $ \(n,pat) -> do

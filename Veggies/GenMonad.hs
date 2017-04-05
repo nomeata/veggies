@@ -112,9 +112,9 @@ namedBr1Block blockId toBlockId = do
     startNamedBlock blockId
     emitTerm $ TERM_Br_1 (TYPE_Label, ID_Local toBlockId)
 
-namedPhiBlock :: HasCallStack => Coq_typ -> Coq_block_id -> [(Coq_ident, Coq_block_id)] -> LG Coq_ident
+namedPhiBlock :: HasCallStack => Coq_typ -> Coq_block_id -> [(Coq_value, Coq_ident)] -> LG Coq_ident
 namedPhiBlock ty blockId [] = error "namedPhiBlock"
 namedPhiBlock ty blockId pred = do
     ensureNoBlock
     startNamedBlock blockId
-    emitInstr $ INSTR_Phi ty [ (i, SV (VALUE_Ident (ID_Local l))) | (i,l) <- pred ]
+    emitInstr $ INSTR_Phi ty [ (l, v) | (v,l) <- pred ]

@@ -167,7 +167,7 @@ primOpBody IndexOffAddrOp_Char = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr ptrTy (ptrTy, ident ptr) [(i64, ident offset)]))
-    byte <- emitInstr $ INSTR_Load False i8 (TYPE_Pointer ptrTy, ident resP) Nothing
+    byte <- emitInstr $ INSTR_Load False i8 (ptrTy, ident resP) Nothing
     int <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident byte) i64))
     boxPrimValue i64 intBoxTy (ident int)
 
@@ -175,7 +175,7 @@ primOpBody ReadOffAddrOp_Int8 = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr ptrTy (ptrTy, ident ptr) [(i64, ident offset)]))
-    byte <- emitInstr $ INSTR_Load False i8 (TYPE_Pointer ptrTy, ident resP) Nothing
+    byte <- emitInstr $ INSTR_Load False i8 (ptrTy, ident resP) Nothing
     int <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident byte) i64))
     res <- boxPrimValue i64 intBoxTy (ident int)
     genReturnIO (p 2) res
@@ -188,7 +188,7 @@ primOpBody WriteOffAddrOp_Int8 = Just $ do
     int <- unboxPrimValue i64 intBoxTy (p 2)
     byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
 
-    emitVoidInstr $ INSTR_Store False (TYPE_Pointer ptrTy, ident byteP) (i8, ident byte) Nothing
+    emitVoidInstr $ INSTR_Store False (ptrTy, ident byteP) (i8, ident byte) Nothing
     return (p 3)
 
 primOpBody MakeStablePtrOp = Just $ do
@@ -228,7 +228,7 @@ primOpBody ReadMutVarOp = Just $ do
 primOpBody Narrow8IntOp = Just $ do
     int <- unboxPrimValue i64 intBoxTy (p 0)
     byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
-    int' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident int) i64))
+    int' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident byte) i64))
     boxPrimValue i64 intBoxTy (ident int')
 
 primOpBody OrdOp = Just $ return (p 0)
