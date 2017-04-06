@@ -28,7 +28,7 @@ before_install:
 install:
     - cabal update
     - cabal install groom
-    - cabal install llvm-hs
+    - cabal install llvm-hs-pure
     - cabal install wl-pprint-text
 
 script:

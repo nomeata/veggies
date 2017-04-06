@@ -14,7 +14,6 @@ import Veggies.ASTUtils
 import Veggies.Common
 
 import qualified Ast2Ast as LLVM
-import qualified Ast2Assembly as LLVM
 import qualified LLVM.Pretty as LLVM
 
 genPAPFun :: G ()
