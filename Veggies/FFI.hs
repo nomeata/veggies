@@ -106,6 +106,7 @@ mkFFICall "fdReady" args = do
     retBox <- boxPrimValue i64 intBoxTy (ident ret)
     genReturnIO (args !! 4) retBox
 mkFFICall "rtsSupportsBoundThreads" args = do
-    liftG $ genIntegerLit 0
+    res <- liftG $ genIntegerLit 0
+    genReturnIO (args !! 0) res
 
 mkFFICall name _ = printAndExit $ "Unsupported FFI call: " ++ name
