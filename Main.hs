@@ -24,7 +24,7 @@ import CmdLineParser
 -- Implementations of the various modes (--show-iface, mkdependHS. etc.)
 import LoadIface        ( showIface )
 import HscMain          ( newHscEnv )
-import DriverPipeline   ( compileFile )
+import DriverPipeline   ( compileFile, oneShot )
 import DriverMkDepend   ( doMkDependHS )
 #ifdef GHCI
 import GHCi.UI          ( interactiveUI, ghciWelcomeMsg, defaultGhciSettings )
@@ -266,7 +266,7 @@ main' postLoadMode dflags0 args flagWarnings = do
        ShowInterface f        -> liftIO $ doShowIface dflags6 f
        DoMake                 -> doMake srcs
        DoMkDependHS           -> doMkDependHS (map fst srcs)
-       StopBefore p           -> liftIO (Veggies.oneShot hsc_env p srcs)
+       StopBefore p           -> liftIO (oneShot hsc_env p srcs)
        DoInteractive          -> ghciUI srcs Nothing
        DoEval exprs           -> ghciUI srcs $ Just $ reverse exprs
        DoAbiHash              -> abiHash (map fst srcs)
@@ -715,7 +715,7 @@ doMake srcs  = do
     -- This means that "ghc Foo.o Bar.o -o baz" links the program as
     -- we expect.
     if (null hs_srcs)
-       then liftIO (trace "oneShot2" (Veggies.oneShot hsc_env StopLn srcs))
+       then liftIO (oneShot hsc_env StopLn srcs)
        else do
 
     o_files <- mapM (\x -> liftIO $ compileFile hsc_env StopLn x)
