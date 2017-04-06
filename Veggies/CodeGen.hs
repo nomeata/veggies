@@ -43,6 +43,7 @@ import Veggies.GenMonad
 import Veggies.CodeGenTypes
 import Veggies.ASTUtils
 import Veggies.Common
+import Veggies.FFI
 
 
 data GenEnv = GenEnv
@@ -310,6 +311,12 @@ genExpr env e
     return dc_local
 
 genExpr env e
+    | (Var v, args) <- collectMoreValArgs e
+    , Just (CCall (CCallSpec (StaticTarget _ l _ _) _ _)) <- isFCallId_maybe v = do
+    args_locals <- mapM (genArg env) args
+    mkFFICall (unpackFS l) args_locals
+
+genExpr env e
     | (f, args) <- collectMoreValArgs e
     , not (null args) = do
 
@@ -319,7 +326,7 @@ genExpr env e
 
 genExpr env (Var v)
     | Just (CCall (CCallSpec (StaticTarget _ l _ _) _ _)) <- isFCallId_maybe v =
-    genEnterAndEval (ID_Global (Name ("ffi_" ++ unpackFS l)))
+    pprPanic "genExpr FFI" (ppr v) 
 
 genExpr env (Var v) | isUnliftedType (idType v) = do
     return (varIdent env v)

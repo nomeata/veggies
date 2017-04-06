@@ -184,6 +184,7 @@ instance Conv Coq_block  BasicBlock  where
 
 instance Conv Coq_linkage Linkage where
     conv LINKAGE_External = External
+    conv LINKAGE_Extern_weak = ExternWeak
     conv LINKAGE_Private  = Private
     conv LINKAGE_Internal = Internal
 

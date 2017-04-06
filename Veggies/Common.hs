@@ -145,6 +145,18 @@ unboxPrimValue valTy boxTy v = do
   where boxTyP = TYPE_Pointer boxTy
         valTyP = TYPE_Pointer valTy
 
+genReturnIO :: Coq_ident -> Coq_ident -> LG Coq_ident
+genReturnIO s x = do
+    (dc, fill) <- allocateDataCon 1 2
+    fill [ s , x ]
+    return dc
+
+genUnboxedUnitTuple :: Coq_ident -> LG Coq_ident
+genUnboxedUnitTuple x = do
+    (dc, fill) <- allocateDataCon 1 1
+    fill [ x ]
+    return dc
+
 
 staticIntLits :: [(Integer, String)]
 staticIntLits = [ (n, "static_int_" ++ show n) | n <- [0,1] ]
@@ -169,34 +181,25 @@ genIntegerLitForReal l litName = do
 genByteStringLit :: B.ByteString -> G Coq_ident
 genByteStringLit s = genStringLit (B.unpack s ++ "\0")
 
-genStringLit :: String -> G Coq_ident
-genStringLit msg = do
+genRawString :: String -> G Coq_ident
+genRawString msg = do
     strName <- freshGlobal
-    litName <- freshGlobal
-
-    emitTL $ TLGlobal $ Coq_mk_global
-        strName
-        msgTy
-        True
-        (Just (SV (VALUE_Cstring msg)))
-        (Just LINKAGE_Private)
-        Nothing
-        Nothing
-        Nothing
-        False
-        Nothing
-        False
-        Nothing
-        Nothing
-
-    emitAliasedGlobal LINKAGE_External litName hsTy ptrBoxTy $
-        SV $ VALUE_Struct [ (enterFunTyP, ident printAndExitIdent)
-                          , (ptrTy, SV (OP_Conversion Bitcast msgTyP (ident (ID_Global strName)) ptrTy))
-                          ]
-    return (ID_Global litName)
+    emitAliasedGlobal LINKAGE_Private strName i8 msgTy $
+        SV (VALUE_Cstring msg)
+    return (ID_Global strName)
   where
     msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
-    msgTyP = TYPE_Pointer msgTy
+
+genStringLit :: String -> G Coq_ident
+genStringLit msg = do
+    str <- genRawString msg
+
+    litName <- freshGlobal
+    emitAliasedGlobal LINKAGE_External litName hsTy ptrBoxTy $
+        SV $ VALUE_Struct [ (enterFunTyP, ident printAndExitIdent)
+                          , (ptrTy, ident str)
+                          ]
+    return (ID_Global litName)
 
 genPrintAndExitClosure :: String -> String -> G ()
 genPrintAndExitClosure name msg = do
@@ -232,4 +235,11 @@ genPrintAndExitClosure name msg = do
 
     msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
     msgTyP = TYPE_Pointer msgTy
+
+printAndExit :: String -> LG Coq_ident
+printAndExit msg = do
+    str <- liftG $ genRawString msg
+    emitVoidInstr $ INSTR_Call (putsTy, putsIdent) [(ptrTy, ident str)]
+    emitVoidInstr $ INSTR_Call (exitTy, exitIdent) [(i64, SV (VALUE_Integer 1))]
+    return voidIdent
 

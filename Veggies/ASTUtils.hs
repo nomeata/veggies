@@ -127,7 +127,7 @@ mkExternalDecl n (TYPE_Pointer (t@(TYPE_Function _ argsTy)))
         (Name n)
         t
         ([],[] <$ argsTy)
-        Nothing
+        (Just LINKAGE_External)
         Nothing
         Nothing
         Nothing

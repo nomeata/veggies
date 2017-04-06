@@ -174,6 +174,11 @@ codeNameStr n  =
     , show (nameUnique n)
     ]
 
+primName :: String -> Maybe String -> String
+primName name suffix = intercalate "_" $ map zEncodeString $
+        [ "GHC.Prim", name ] ++ [s | Just s <- return suffix ]
+
+voidIdent = ID_Global (Name (primName "void#" Nothing))
 
 closIdent :: Coq_ident
 closIdent = ID_Local closRawId

@@ -311,15 +311,15 @@ Library
         Foreign.ForeignPtr.Imp
         System.Environment.ExecutablePath
 
-    -- c-sources:
+    c-sources:
+         cbits/WCsubst.c
+         cbits/inputReady.c
     --     cbits/DarwinUtils.c
     --     cbits/PrelIOUtils.c
     --     cbits/SetEnv.c
-    --     cbits/WCsubst.c
     --     cbits/Win32Utils.c
     --     cbits/consUtils.c
     --     cbits/iconv.c
-    --     cbits/inputReady.c
     --     cbits/md5.c
     --     cbits/primFloat.c
     --     cbits/rts.c
