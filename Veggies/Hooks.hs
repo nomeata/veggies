@@ -16,6 +16,8 @@ import           SimplStg             (stg2stg)
 import           HeaderInfo
 import           HscTypes
 import           Maybes               (expectJust)
+import           PipelineMonad
+import           CodeOutput           (outputForeignStubs)
 
 import           Control.Concurrent.MVar
 import           Control.Monad
@@ -63,6 +65,12 @@ installDriverHooks df = df { hooks = hooks' }
 haveCpp :: DynFlags -> Bool
 haveCpp dflags = xopt Ext.Cpp dflags
 
+compileStub :: HscEnv -> FilePath -> IO FilePath
+compileStub hsc_env stub_c = do
+    -- compileStub is not exported, try to emulate with compileFile
+    -- Failing to set output to Temporary, not sure what goes wrong
+    compileFile hsc_env StopLn (stub_c, Nothing)
+
 runVeggiesPhase :: PhasePlus -> FilePath -> DynFlags
               -> CompPipeline (PhasePlus, FilePath)
 
@@ -106,8 +114,14 @@ runVeggiesPhase (HscOut src_flavour mod_name result) _ dflags = do
 
                     PipeState{hsc_env=hsc_env'} <- getPipeState
 
-                    outputFilename <- liftIO $
+                    (outputFilename, mStub) <- liftIO $
                       veggiesWriteModule hsc_env' cgguts mod_summary output_fn
+
+                    case mStub of
+                        Nothing -> return ()
+                        Just stub_c ->
+                            do stub_o <- liftIO $ compileStub hsc_env' stub_c
+                               setStubO stub_o
 
                     return (RealPhase next_phase, outputFilename)
 -- skip these, but copy the result
@@ -134,18 +148,20 @@ veggiesWriteModule :: HscEnv      -- ^ Environment in which to compile the modul
                    -> CgGuts
                    -> ModSummary
                    -> FilePath    -- ^ Output path
-                   -> IO FilePath
+                   -> IO (FilePath, Maybe FilePath)
 veggiesWriteModule env core mod output = do
     b <- veggiesCompileModule env core mod
     createDirectoryIfMissing True (takeDirectory output)
     B.writeFile output b
-    return output
+
+    (_, stubs_exist) <- outputForeignStubs (hsc_dflags env) (cg_module core) (ms_location mod) (cg_foreign core)
+
+    return (output, stubs_exist)
 
 veggiesCompileModule :: HscEnv      -- ^ Environment in which to compile the module
                      -> CgGuts
                      -> ModSummary
                      -> IO B.ByteString
--- dynamic-too will invoke this twice, cache results in VeggiesEnv
 veggiesCompileModule env core mod = compile
   where
     mod'  = ms_mod mod
