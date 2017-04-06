@@ -93,7 +93,7 @@ genRTSCall = do
 
         -- Arity does not match
         startNamedBlock neqL
-        isFew <- emitInstr $ INSTR_Op (SV (OP_ICmp Slt i64 (ident funArity) (ident argArity)))
+        isFew <- emitInstr $ INSTR_Op (SV (OP_ICmp Slt i64 (ident argArity) (ident funArity)))
         emitTerm $ TERM_Br (i1, ident isFew) (TYPE_Label, ID_Local fewL) (TYPE_Label, ID_Local manyL)
 
         -- Too few arguments
