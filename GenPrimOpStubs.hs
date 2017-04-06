@@ -240,6 +240,8 @@ primOpBody AddrEqOp = Just $ do
 primOpBody IntAddOp = Just $ mkIntOpBody (Add False False)
 primOpBody IntSubOp = Just $ mkIntOpBody (Sub False False)
 primOpBody IntMulOp = Just $ mkIntOpBody (Mul False False)
+primOpBody ISllOp   = Just $ mkIntOpBody (Shl False False)
+primOpBody ISraOp   = Just $ mkIntOpBody (AShr False)
 
 primOpBody IntGtOp = Just $ mkCmpBody Sgt
 primOpBody IntGeOp = Just $ mkCmpBody Sge
@@ -247,6 +249,8 @@ primOpBody IntEqOp = Just $ mkCmpBody Eq
 primOpBody IntNeOp = Just $ mkCmpBody Ne
 primOpBody IntLtOp = Just $ mkCmpBody Slt
 primOpBody IntLeOp = Just $ mkCmpBody Sle
+
+primOpBody CharEqOp = Just $ mkCmpBody Eq
 
 primOpBody WordAddOp = Just $ mkIntOpBody (Add False False)
 primOpBody WordSubOp = Just $ mkIntOpBody (Sub False False)
@@ -258,6 +262,8 @@ primOpBody WordEqOp = Just $ mkCmpBody Eq
 primOpBody WordNeOp = Just $ mkCmpBody Ne
 primOpBody WordLtOp = Just $ mkCmpBody Ult
 primOpBody WordLeOp = Just $ mkCmpBody Ule
+
+primOpBody AddrAddOp = Just $ mkIntOpBody (Add False False)
 
 primOpBody IndexOffAddrOp_Char = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
@@ -276,6 +282,26 @@ primOpBody ReadOffAddrOp_Int8 = Just $ do
     res <- boxPrimValue i64 intBoxTy (ident int)
     genReturnIO (p 2) res
 
+primOpBody ReadOffAddrOp_Word64 = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i64)))
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i64) (TYPE_Pointer i64, ident castPtr) [(i64, ident offset)]))
+    val <- emitInstr $ INSTR_Load False i64 (TYPE_Pointer i64, ident resP) Nothing
+    box <- boxPrimValue i64 intBoxTy (ident val)
+    genReturnIO (p 2) box
+
+primOpBody ReadOffAddrOp_WideChar = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i32)))
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i32) (TYPE_Pointer i32, ident castPtr) [(i64, ident offset)]))
+    val <- emitInstr $ INSTR_Load False i32 (TYPE_Pointer i32, ident resP) Nothing
+    valCast <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i32 (ident val) i64))
+    box <- boxPrimValue i64 intBoxTy (ident valCast)
+    genReturnIO (p 2) box
+
+
 primOpBody WriteOffAddrOp_Int8 = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
@@ -285,6 +311,51 @@ primOpBody WriteOffAddrOp_Int8 = Just $ do
     byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
 
     emitVoidInstr $ INSTR_Store False (ptrTy, ident byteP) (i8, ident byte) Nothing
+    return (p 3)
+
+primOpBody WriteOffAddrOp_Word8 = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    byteP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr ptrTy (ptrTy, ident ptr) [(i64, ident offset)]))
+
+    int <- unboxPrimValue i64 intBoxTy (p 2)
+    byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
+
+    emitVoidInstr $ INSTR_Store False (ptrTy, ident byteP) (i8, ident byte) Nothing
+    return (p 3)
+
+primOpBody WriteOffAddrOp_WideChar = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    i32Ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i32)))
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    wcharP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i32) (TYPE_Pointer i32, ident i32Ptr) [(i64, ident offset)]))
+
+    int <- unboxPrimValue i64 intBoxTy (p 2)
+    wchar <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i32))
+
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer i32, ident wcharP) (i32, ident wchar) Nothing
+    return (p 3)
+
+primOpBody WriteOffAddrOp_Addr = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer ptrTy)))
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    destP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer ptrTy) (TYPE_Pointer ptrTy, ident castPtr) [(i64, ident offset)]))
+
+    val <- unboxPrimValue ptrTy ptrBoxTy (p 2)
+
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer ptrTy, ident destP) (ptrTy, ident val) Nothing
+    return (p 3)
+
+primOpBody WriteOffAddrOp_Word64 = Just $ do
+    ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i64)))
+    offset <- unboxPrimValue i64 intBoxTy (p 1)
+    destP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i64) (TYPE_Pointer i64, ident castPtr) [(i64, ident offset)]))
+
+    val <- unboxPrimValue i64 intBoxTy (p 2)
+
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer i64, ident destP) (i64, ident val) Nothing
     return (p 3)
 
 primOpBody MakeStablePtrOp = Just $ do
@@ -326,6 +397,11 @@ primOpBody Narrow8IntOp = Just $ do
     byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i8))
     int' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i8 (ident byte) i64))
     boxPrimValue i64 intBoxTy (ident int')
+primOpBody Narrow32IntOp = Just $ do
+    int <- unboxPrimValue i64 intBoxTy (p 0)
+    byte <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i64 (ident int) i32))
+    int' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i32 (ident byte) i64))
+    boxPrimValue i64 intBoxTy (ident int')
 
 primOpBody OrdOp = Just $ return (p 0)
 
@@ -347,8 +423,17 @@ primOpBody  NewAlignedPinnedByteArrayOp_Char = Just $ do
     val <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 2) val
 
+primOpBody  NewPinnedByteArrayOp_Char = Just $ do
+   -- Int# -> State# s -> (# State# s, MutableByteArray# s #)
+    size <- unboxPrimValue i64 intBoxTy (p 0)
+    ptr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+    val <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
+    genReturnIO (p 1) val
+
 primOpBody NoDuplicateOp = Just $ return (p 0)
 primOpBody TouchOp = Just $ return (p 1)
+primOpBody Int2WordOp = Just $ return (p 0)
+primOpBody Word2IntOp = Just $ return (p 0)
 
 primOpBody MaskAsyncExceptionsOp = Just $ do
    -- apply first argument to the second argument
@@ -364,8 +449,14 @@ primOpBody MaskStatus = Just $ do
     zero <- liftG $ genIntegerLit 0
     genReturnIO (p 0) zero
 
+primOpBody MkWeakOp = Just $ do
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
+    genReturnIO (p 3) res
 primOpBody MkWeakNoFinalizerOp = Just $ do
-    genReturnIO (p 2) voidIdent
+    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
+    genReturnIO (p 2) res
 
 primOpBody MyThreadIdOp = Just $ do
     genReturnIO (p 0) voidIdent
@@ -404,6 +495,54 @@ ffiBody "ffi_hs_iconv_open"
             [(ptrTy, ident ptr1), (ptrTy, ident ptr2)]
         res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
         genReturnIO (p 2) res
+{-
+size_t hs_iconv(iconv_t cd,
+                const char* * inbuf, size_t * inbytesleft,
+                char* * outbuf, size_t * outbytesleft)
+{ return iconv(cd, (void*)inbuf, inbytesleft, outbuf, outbytesleft); }
+-}
+ffiBody "ffi_hs_iconv"
+    = withArity 6 $ do
+        ptr1 <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+        ptr2 <- unboxPrimValue ptrTy ptrBoxTy (p 1)
+        ptr3 <- unboxPrimValue ptrTy ptrBoxTy (p 2)
+        ptr4 <- unboxPrimValue ptrTy ptrBoxTy (p 3)
+        ptr5 <- unboxPrimValue ptrTy ptrBoxTy (p 4)
+        let iconv_ty = TYPE_Function i64 [ptrTy, ptrTy, ptrTy, ptrTy, ptrTy]
+            iconv_ident = ID_Global (Name "iconv")
+        ret <- emitInstr $ INSTR_Call (iconv_ty, iconv_ident)
+            [ (ptrTy, ident ptr1)
+            , (ptrTy, ident ptr2)
+            , (ptrTy, ident ptr3)
+            , (ptrTy, ident ptr4)
+            , (ptrTy, ident ptr5)
+            ]
+        retBox <- boxPrimValue i64 intBoxTy (ident ret)
+        genReturnIO (p 5) retBox
+{-
+int hs_iconv_close(iconv_t cd) {
+        return iconv_close(cd);
+-}
+ffiBody "ffi_hs_iconv_close"
+    = withArity 2 $ do
+        ptr1 <- unboxPrimValue ptrTy ptrBoxTy (p 0)
+        let iconv_close_ty = TYPE_Function i64 [ptrTy]
+            iconv_close_ident = ID_Global (Name "iconv_close")
+        ret <- emitInstr $ INSTR_Call (iconv_close_ty, iconv_close_ident)
+            [ (ptrTy, ident ptr1)
+            ]
+        retBox <- boxPrimValue i64 intBoxTy (ident ret)
+        genReturnIO (p 1) retBox
+ffiBody "ffi_isatty"
+    = withArity 2 $ do
+        int <- unboxPrimValue i64 intBoxTy (p 0)
+        let isatty_ty = TYPE_Function i64 [i64]
+            isatty_ident = ID_Global (Name "isatty")
+        ret <- emitInstr $ INSTR_Call (isatty_ty, isatty_ident)
+            [ (i64, ident int)
+            ]
+        retBox <- boxPrimValue i64 intBoxTy (ident ret)
+        genReturnIO (p 1) retBox
 ffiBody _ = Nothing
 
 
