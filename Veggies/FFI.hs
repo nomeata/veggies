@@ -24,7 +24,7 @@ mkFFICall "hs_free_stable_ptr" args = do
 mkFFICall "stg_sig_install" args = do
     genReturnIO (args !! 3) (args !! 1)
 mkFFICall "localeEncoding" args = do
-    res <- liftG $ genStringLit "UTF-8\0"
+    res <- liftG $ genStringLit "UTF-8"
     genReturnIO (args !! 0) res
 mkFFICall "hs_iconv_open" args = do
     ptr1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
@@ -105,6 +105,20 @@ mkFFICall "fdReady" args = do
         ]
     retBox <- boxPrimValue i64 intBoxTy (ident ret)
     genReturnIO (args !! 4) retBox
+--   c_write :: CInt -> Ptr Word8 -> CSize -> IO CSsize
+mkFFICall "ghczuwrapperZC20ZCbaseZCSystemziPosixziInternalsZCwrite" args = do
+    a1 <- unboxPrimValue i64 intBoxTy (args !! 0)
+    a2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
+    a3 <- unboxPrimValue i64 intBoxTy (args !! 2)
+    let fun_ty = TYPE_Function i64 [i64, ptrTy, i64]
+        fun_ident = ID_Global (Name "ghczuwrapperZC20ZCbaseZCSystemziPosixziInternalsZCwrite")
+    ret <- emitInstr $ INSTR_Call (fun_ty, fun_ident)
+        [ (i64, ident a1)
+        , (ptrTy, ident a2)
+        , (i64, ident a3)
+        ]
+    retBox <- boxPrimValue i64 intBoxTy (ident ret)
+    genReturnIO (args !! 3) retBox
 mkFFICall "rtsSupportsBoundThreads" args = do
     res <- liftG $ genIntegerLit 0
     genReturnIO (args !! 0) res

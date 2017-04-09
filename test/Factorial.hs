@@ -70,7 +70,7 @@ returnLambda2 n = \x y -> x * n * y
 
 main :: IO ()
 -- main = IO (\s -> (# s, Z #))
-main =
-    let n = 10 in
-    let x = intToNat (genFac (returnLambda2 1) n) `eq` fac (intToNat n) in
-    print Z
+main = do
+    let n = 10
+    let x = intToNat (genFac (returnLambda2 1) n) `eq` fac (intToNat n)
+    putStrLn "hi ☃"

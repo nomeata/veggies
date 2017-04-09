@@ -224,6 +224,7 @@ primOpBody IntSubOp = Just $ mkIntOpBody (Sub False False)
 primOpBody IntMulOp = Just $ mkIntOpBody (Mul False False)
 primOpBody ISllOp   = Just $ mkIntOpBody (Shl False False)
 primOpBody ISraOp   = Just $ mkIntOpBody (AShr False)
+primOpBody AndIOp   = Just $ mkIntOpBody And
 
 primOpBody IntGtOp = Just $ mkCmpBody Sgt
 primOpBody IntGeOp = Just $ mkCmpBody Sge
@@ -233,6 +234,7 @@ primOpBody IntLtOp = Just $ mkCmpBody Slt
 primOpBody IntLeOp = Just $ mkCmpBody Sle
 
 primOpBody CharEqOp = Just $ mkCmpBody Eq
+primOpBody CharLeOp = Just $ mkCmpBody Ult
 
 primOpBody WordAddOp = Just $ mkIntOpBody (Add False False)
 primOpBody WordSubOp = Just $ mkIntOpBody (Sub False False)
