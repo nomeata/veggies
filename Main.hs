@@ -225,9 +225,13 @@ main' postLoadMode dflags0 args flagWarnings = do
   -- veggies-setup
   let dflags4b =
             -- this avoids the stub C code that interfaces with the RTS
-            setGeneralFlag' Opt_NoHsMain $
+            -- Unfortunately, it also causes linking, which we do not want
+            -- to do. So we have to live with the C code, and stub around it
+            -- setGeneralFlag' Opt_NoHsMain $
+
             -- this installs our custom code genrator
             Veggies.installDriverHooks dflags4
+
             -- this ensurs that GHC picks up the .ll file
             { hscTarget = HscLlvm }
 

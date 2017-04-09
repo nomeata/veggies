@@ -37,9 +37,13 @@ define %hs* @rts_printAndExit(%hs* %clos) {
   unreachable
 }
 
+; stubs
+@defaultRtsConfig = constant i8* null
+@ZCMain_main_closure = constant i8* null
+
 ; Definition of main function
 @GHCziPrim_realWorldzh = external constant %hs
-define i64 @main() {   ; i32()*
+define i64 @hs_main() {   ; i32()*
   %ret = call %hs* @ZCMain_main_fun([0 x %hs*]* null, %hs* @GHCziPrim_realWorldzh)
   ret i64 0
 }
