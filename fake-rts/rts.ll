@@ -18,7 +18,6 @@ declare void @puts(i8* nocapture) nounwind
 declare void @exit(i64) nounwind
 
 
-declare extern_weak %hs* @ZCMain_main_fun([0 x %hs*]* %clos, %hs* %eta_B1)
 
 @bad_arity_str = private unnamed_addr constant [11 x i8] c"bad arity\0A\00"
 define %hs* @rts_badArity() {
@@ -41,11 +40,26 @@ define %hs* @rts_printAndExit(%hs* %clos) {
 @defaultRtsConfig = constant i8* null
 @ZCMain_main_closure = constant i8* null
 
+; The real entry point
+@ZCMain_main = external constant %hs
+
+declare %hs* @rts_call(%hs*, i64, [0 x %hs*]*)
+
 ; Definition of main function
 @GHCziPrim_realWorldzh = external constant %hs
-define i64 @hs_main() {   ; i32()*
-  %ret = call %hs* @ZCMain_main_fun([0 x %hs*]* null, %hs* @GHCziPrim_realWorldzh)
-  ret i64 0
+define i64 @hs_main() {
+  %enterPtr = getelementptr %hs, %hs* @ZCMain_main, i32 0, i32 0
+  %enter = load %hs* (%hs*)*, %hs* (%hs*)** %enterPtr
+  %evaledPayload = call %hs* %enter(%hs* @ZCMain_main)
+
+  %args = alloca %hs*, i64 1
+  %argsCasted = bitcast %hs** %args to [0 x %hs*]*
+  %argPtr = getelementptr [0 x %hs*], [0 x %hs*]* %argsCasted, i32 0, i32 0
+  store %hs* @GHCziPrim_realWorldzh, %hs** %argPtr
+  call %hs* @rts_call(%hs* %evaledPayload, i64 1, [0 x %hs*]* %argsCasted)
+
+  call void @exit(i64 0)
+  unreachable
 }
 
 ; some embedded things
