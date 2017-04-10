@@ -48,7 +48,6 @@ import Veggies.FFI
 
 data GenEnv = GenEnv
     { topLvls :: IdSet
-    , topLvlArities :: VarEnv Integer
     }
 
 genCode :: ModuleName -> [TyCon] -> CoreProgram -> Coq_modul
@@ -65,16 +64,7 @@ genCode name tycons binds
         sequence_ [genStaticVal env v e | (v,e) <- flattenBinds binds ]
 
 mkGenEnv :: [(Id, CoreExpr)] -> GenEnv
-mkGenEnv pairs =
-    GenEnv { topLvls = mkVarSet (map fst pairs)
-           , topLvlArities = mkVarEnv
-                [ (v, fromIntegral (length (fst (collectMoreValBinders e)))) | (v,e) <- pairs ]
-           }
-
-getIdArity :: GenEnv -> Id -> Integer
-getIdArity env v | isExternalName (idName v)                    = fromIntegral $ idArity v
-                 | Just a <- lookupVarEnv (topLvlArities env) v = a
-                 | otherwise                                    = fromIntegral $ idArity v
+mkGenEnv pairs = GenEnv { topLvls = mkVarSet (map fst pairs) }
 
 isTopLvl :: GenEnv -> Id -> Bool
 isTopLvl env v = v `elemVarSet` topLvls env
@@ -84,15 +74,32 @@ genStaticVal env v (Cast e _)               = genStaticVal env v e
 genStaticVal env v (Lam b e) | not (isId b) = genStaticVal env v e
 genStaticVal env v (App e a) | isTyCoArg a  = genStaticVal env v e
 
-genStaticVal env v rhs
-    | getIdArity env v == 0
-    , Just dc <- isDataConId_maybe v
+-- The top level binding for a nullary data constructor
+genStaticVal env v _rhs
+    | Just dc <- isDataConId_maybe v
+    , dataConRepArity dc == 0
     = emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkDataConTy 0) $
         SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                           , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
                           , (envTy 0 , SV (VALUE_Array []))
                           ]
-
+-- The top level binding for a non-nullary data constructor
+genStaticVal env v _rhs
+    | Just dc <- isDataConId_maybe v
+    , let arity = fromIntegral (dataConRepArity dc)
+    = do
+        let paramName n = "dcArg_" ++ show n
+            param_raw_ids = [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
+        emitHsFun LINKAGE_Private (funRawId (dataConWorkId dc)) [] param_raw_ids $ do
+            (dcIdent, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
+            fill $ map ID_Local param_raw_ids
+            return dcIdent
+        emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkFunClosureTy 0) $
+            SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
+                              , (hsFunTyP,    ident (funIdent env v))
+                              , (TYPE_I 64,   SV (VALUE_Integer arity))
+                              , (envTy 0 ,    SV (VALUE_Array []))
+                              ]
 
 -- A top-level data con application
 genStaticVal env v rhs
@@ -106,12 +113,14 @@ genStaticVal env v rhs
     unless (arity == fromIntegral (dataConRepArity dc)) $ do
            pprTrace "genStaticVal arity" (ppr v <+> ppr rhs <+> ppr (dataConRepArity dc) <+> ppr (fromIntegral arity::Int)) (return ())
 
-    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkDataConTy arity) $
+    emitAliasedGlobal linkage (varRawId v) hsTy (mkDataConTy arity) $
         SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                           , (TYPE_I 64, SV (VALUE_Integer (fromIntegral (dataConTag dc))))
                           , (envTy arity , SV (VALUE_Array args_idents))
                           ]
   where
+    linkage = if isExternalName (idName v) then LINKAGE_External else LINKAGE_Private
+
     cast arity val = SV (OP_Conversion Bitcast (mkDataConTy arity) val hsTyP)
 
     getStaticArg :: CoreExpr -> Maybe CoreExpr
@@ -145,25 +154,33 @@ genStaticVal env v rhs
         return $ SV (VALUE_Null)
     genStaticArg e = pprPanic "genStaticArg" (ppr e)
 
+
 -- An alias
 genStaticVal env v (Var v2) = do
-    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy indTy $
+    emitAliasedGlobal linkage (varRawId v) hsTy indTy $
         SV $ VALUE_Struct [ (enterFunTyP, ident indirectionIdent)
                           , (hsTyP,       ident (varIdent env v2))
                           ]
+  where
+    linkage = if isExternalName (idName v) then LINKAGE_External else LINKAGE_Private
+
 -- A top-level function
 genStaticVal env v rhs | exprIsHNF rhs = do
     unless (arity > 0) $ pprPanic "genStaticVal" (ppr v <+> ppr rhs)
-    genTopLvlFunction env v rhs
 
-    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkFunClosureTy 0) $
+    emitHsFun LINKAGE_Private (funRawId v) [] [ varRawId p | p <- params ] $ do
+        genExpr env body
+
+    emitAliasedGlobal linkage (varRawId v) hsTy (mkFunClosureTy 0) $
         SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
                           , (hsFunTyP,    ident (funIdent env v))
                           , (TYPE_I 64,   SV (VALUE_Integer arity))
                           , (envTy 0 ,    SV (VALUE_Array []))
                           ]
   where
-    arity = getIdArity env v
+    (params, body) = collectMoreValBinders rhs
+    arity = fromIntegral (length params)
+    linkage = if isExternalName (idName v) then LINKAGE_External else LINKAGE_Private
 
 -- A static thunk
 genStaticVal env v rhs = do
@@ -175,38 +192,12 @@ genStaticVal env v rhs = do
         LINKAGE_Internal
         (funRawId v)
         blocks
-    emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkThunkTy 0) $
+    emitAliasedGlobal linkage (varRawId v) hsTy (mkThunkTy 0) $
         SV $ VALUE_Struct [ (enterFunTyP, ident (funIdent env v))
                           , (envTy 0,     mkThunkArray [])
                           ]
-
-genTopLvlFunction :: GenEnv -> Id -> CoreExpr -> G ()
-genTopLvlFunction env v rhs
-    | Just dc <- isDataConWorkId_maybe v = genDataConWorker dc
-genTopLvlFunction env v rhs
-    | length params /= fromIntegral (getIdArity env v)
-    = pprPanic "genTopLvlFunction" (ppr v <+> ppr rhs <+> ppr (fromIntegral (getIdArity env v)::Int))
-    | otherwise
-    = emitHsFun LINKAGE_External (funRawId v) [] [ varRawId p | p <- params ] $ do
-        genExpr env body
   where
-    (params, body) = collectMoreValBinders rhs
-
-
-genDataConWorker :: DataCon -> G ()
-genDataConWorker dc = do
-    emitHsFun linkage (funRawId (dataConWorkId dc)) [] param_raw_ids $ do
-        (dcIdent, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
-        fill $ map ID_Local param_raw_ids
-        return dcIdent
-  where
-    linkage | isUnboxedTupleCon dc -- || isUnboxedSumCon dc -- see Id.hasNoBinding
-            = LINKAGE_Private
-            | otherwise
-            = LINKAGE_External
-
-    paramName n = "dcArg_" ++ show n
-    param_raw_ids = [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
+    linkage = if isExternalName (idName v) then LINKAGE_External else LINKAGE_Private
 
 
 collectMoreValBinders :: CoreExpr -> ([Id], CoreExpr)
