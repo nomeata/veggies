@@ -123,7 +123,7 @@ genRTSCall = do
         srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
         destPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,1]
         destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
-        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident diffArity)))
+        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident argArity)))
         emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
                 [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
                  (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
