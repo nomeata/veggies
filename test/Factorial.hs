@@ -72,5 +72,6 @@ main :: IO ()
 -- main = IO (\s -> (# s, Z #))
 main = do
     let n = 10
-    let x = intToNat (genFac (returnLambda2 1) n) `eq` fac (intToNat n)
-    putStrLn "hi ☃"
+    let x = intToNat (genFac (returnLambda2 1) n)
+    let y = fac (intToNat n)
+    print (natToWord (fac (intToNat 4)))

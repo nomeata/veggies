@@ -239,6 +239,7 @@ primOpBody CharLeOp = Just $ mkCmpBody Ult
 primOpBody WordAddOp = Just $ mkIntOpBody (Add False False)
 primOpBody WordSubOp = Just $ mkIntOpBody (Sub False False)
 primOpBody WordMulOp = Just $ mkIntOpBody (Mul False False)
+primOpBody WordRemOp = Just $ mkIntOpBody URem
 
 primOpBody WordGtOp = Just $ mkCmpBody Ugt
 primOpBody WordGeOp = Just $ mkCmpBody Uge
