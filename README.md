@@ -12,18 +12,24 @@ DeepSpec project.
 Current state
 -------------
 
-Currently, it replaces the code generator with one that creates an empty LLVM
-file. Interestingly, a lot of stuff still works (besides actually running the
-code). This is because GHC never actually uses the resulting binaries, only the
-`.hi` file, which gets created before code generation.
+All Haskell code in `ghc-prim`, `integer-gmp` and `base` compiles. What does not work:
+
+ * In out-of-memory (or out-of-stack?) situations, the program segfaults.
+ * Many primitive operations and FFI calls are not implemented, and will abort
+   the program with a descriptive message when used. Let me know if you are
+   missing something specific. This includes all the `Integer` functions, so
+   use `Int`.
 
 Installation
 ------------
 
- * Ensure that `ghc` is GHC version 8.0, and that `clang-3.9` is in your path.
+ * Ensure that `ghc` is GHC version 8.0, and that `clang-4.0` is in your path.
  * Clone the repository
  * Run `./boot.sh some-directory`.
- * You can now use `some/directory/bin/veggies`.
+ * You can now use `some-directory/bin/veggies` like you would use `ghc`.
+
+You can use it with `cabal` by passing `-w some-directory/bin/veggies` to
+`cabal configure`.
 
 Heap layout and calling convention
 ----------------------------------
