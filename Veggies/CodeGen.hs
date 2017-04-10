@@ -76,7 +76,7 @@ genStaticVal env v (App e a) | isTyCoArg a  = genStaticVal env v e
 
 -- The top level binding for a nullary data constructor
 genStaticVal env v _rhs
-    | Just dc <- isDataConId_maybe v
+    | Just dc <- isDataConWorkId_maybe v
     , dataConRepArity dc == 0
     = emitAliasedGlobal LINKAGE_External (varRawId v) hsTy (mkDataConTy 0) $
         SV $ VALUE_Struct [ (enterFunTyP, ident returnArgIdent)
@@ -85,11 +85,11 @@ genStaticVal env v _rhs
                           ]
 -- The top level binding for a non-nullary data constructor
 genStaticVal env v _rhs
-    | Just dc <- isDataConId_maybe v
+    | Just dc <- isDataConWorkId_maybe v
     , let arity = fromIntegral (dataConRepArity dc)
     = do
         let paramName n = "dcArg_" ++ show n
-            param_raw_ids = [ Name (paramName n) | n <- [0.. dataConRepArity dc-1]]
+            param_raw_ids = [ Name (paramName n) | n <- [0..arity-1] ]
         emitHsFun LINKAGE_Private (funRawId (dataConWorkId dc)) [] param_raw_ids $ do
             (dcIdent, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
             fill $ map ID_Local param_raw_ids
@@ -104,7 +104,7 @@ genStaticVal env v _rhs
 -- A top-level data con application
 genStaticVal env v rhs
     | (Var f, args) <- collectMoreValArgs rhs
-    , Just dc <- isDataConId_maybe f
+    , Just dc <- isDataConWorkId_maybe f
     , let val_args = mapMaybe getStaticArg args
     , not (null val_args)
     = do
@@ -375,7 +375,7 @@ genLetBind :: GenEnv -> Var -> CoreExpr -> LG (LG ())
 genLetBind env v (Cast e _) = genLetBind env v e
 genLetBind env v e
     | (Var f, args) <- collectMoreValArgs e
-    , Just dc <- isDataConId_maybe f
+    , Just dc <- isDataConWorkId_maybe f
     = do
       (dc_local, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
       emitNamedInstr (varRawId v) $ noop hsTyP (ident dc_local)
