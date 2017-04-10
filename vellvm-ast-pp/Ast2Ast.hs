@@ -120,6 +120,9 @@ instance Conv Coq_ibinop (Operand -> Operand -> Instruction) where
     conv (O.AShr exact)  = \o1 o2 -> A.AShr exact o1 o2 []
     conv O.And           = \o1 o2 -> A.And o1 o2 []
     conv O.URem          = \o1 o2 -> A.URem o1 o2 []
+    conv (O.UDiv exact)  = \o1 o2 -> A.UDiv exact o1 o2 []
+    conv O.SRem          = \o1 o2 -> A.SRem o1 o2 []
+    conv (O.SDiv exact)  = \o1 o2 -> A.SDiv exact o1 o2 []
 
 instance Conv Coq_icmp A.IntegerPredicate where
     conv O.Eq = A.EQ

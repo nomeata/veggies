@@ -240,6 +240,7 @@ primOpBody WordAddOp = Just $ mkIntOpBody (Add False False)
 primOpBody WordSubOp = Just $ mkIntOpBody (Sub False False)
 primOpBody WordMulOp = Just $ mkIntOpBody (Mul False False)
 primOpBody WordRemOp = Just $ mkIntOpBody URem
+primOpBody WordQuotOp = Just $ mkIntOpBody (UDiv False) -- Maybe fishy?
 
 primOpBody WordGtOp = Just $ mkCmpBody Ugt
 primOpBody WordGeOp = Just $ mkCmpBody Uge
