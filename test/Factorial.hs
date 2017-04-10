@@ -71,7 +71,8 @@ returnLambda2 n = \x y -> x * n * y
 main :: IO ()
 -- main = IO (\s -> (# s, Z #))
 main = do
-    let n = 10
+    let n = 7
     let x = intToNat (genFac (returnLambda2 1) n)
     let y = fac (intToNat n)
-    print (natToWord (fac (intToNat 4)))
+    print (natToWord x)
+    print (natToWord y)
