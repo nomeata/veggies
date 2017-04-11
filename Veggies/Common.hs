@@ -28,14 +28,21 @@ loadEnv envIdent names = do
         p <- emitInstr $ getElemPtr (envTyP 0) envIdent [0,i]
         emitNamedInstr n $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
 
-emitHsFun :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] -> [Coq_raw_id] -> LG Coq_ident -> G ()
-emitHsFun linkage fun_name fv_names arg_names body = do
+loadArgs :: [Coq_raw_id] -> LG ()
+loadArgs arg_names = do
+    loadEnv argsIdent arg_names
+    casted <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsIdent) ptrTy))
+    genFree (ident casted)
+
+
+emitHsFun :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] ->  LG Coq_ident -> G ()
+emitHsFun linkage fun_name fv_names body = do
     blocks <- runLG $ do
         casted <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (mkFunClosureTyP 0)))
         fv_env <- emitInstr $ getElemPtr (mkFunClosureTyP 0) casted [0,3]
         loadEnv fv_env fv_names
-        loadEnv argsIdent arg_names
         ret <- body
         emitTerm $ TERM_Ret (hsTyP, ident ret)
     emitTL $ TLDef $ mkHsFunDefinition linkage fun_name blocks
@@ -66,9 +73,9 @@ genFunctionCall f [] = error $ "genFunctionCall" -- ++ show f
 genFunctionCall evaledFun args_locals = do
     let arity = fromIntegral (length args_locals)
 
-    argsRawPtr <- emitInstr $ INSTR_Alloca hsTyP (Just (i64, SV (VALUE_Integer arity))) Nothing
+    argsRawPtr <- genMallocWords (SV (VALUE_Integer arity))
     argsPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident argsRawPtr) (envTyP 0)))
+        INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident argsRawPtr) (envTyP 0)))
     storeEnv 0 argsPtr args_locals
 
     emitInstr $ INSTR_Call (callTy, callIdent)
@@ -89,6 +96,10 @@ genMallocWords n = do
 genMallocBytes :: Coq_value -> LG Coq_ident
 genMallocBytes size = do
     emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, size)]
+
+genFree :: Coq_value -> LG ()
+genFree ptr = do
+    emitVoidInstr $ INSTR_Call (freeTy, freeIdent) [(ptrTy, ptr)]
 
 
 allocateDataCon :: Integer -> Integer -> (LG (Coq_ident, [Coq_ident] ->  LG ()))

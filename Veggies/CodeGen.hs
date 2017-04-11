@@ -90,7 +90,8 @@ genStaticVal env v _rhs
     = do
         let paramName n = "dcArg_" ++ show n
             param_raw_ids = [ Name (paramName n) | n <- [0..arity-1] ]
-        emitHsFun LINKAGE_Private (funRawId (dataConWorkId dc)) [] param_raw_ids $ do
+        emitHsFun LINKAGE_Private (funRawId (dataConWorkId dc)) [] $ do
+            loadArgs param_raw_ids
             (dcIdent, fill) <- allocateDataCon (fromIntegral (dataConTag dc)) (fromIntegral (dataConRepArity dc))
             fill $ map ID_Local param_raw_ids
             return dcIdent
@@ -168,7 +169,8 @@ genStaticVal env v (Var v2) = do
 genStaticVal env v rhs | exprIsHNF rhs = do
     unless (arity > 0) $ pprPanic "genStaticVal" (ppr v <+> ppr rhs)
 
-    emitHsFun LINKAGE_Private (funRawId v) [] [ varRawId p | p <- params ] $ do
+    emitHsFun LINKAGE_Private (funRawId v) [] $ do
+        loadArgs [ varRawId p | p <- params ]
         genExpr env body
 
     emitAliasedGlobal linkage (varRawId v) hsTy (mkFunClosureTy 0) $
@@ -423,7 +425,8 @@ genLetBind env v rhs | exprIsHNF rhs =
         storeEnv env_size envPtr [ varIdent env fv | fv <- fvs ]
 
     genFunCode = do
-      emitHsFun LINKAGE_Internal (funRawId v) [ varRawId p | p <- fvs ] [ varRawId p | p <- params ] $ do
+      emitHsFun LINKAGE_Internal (funRawId v) [ varRawId p | p <- fvs ] $ do
+        loadArgs [ varRawId p | p <- params ]
         genExpr env body
         -- TODO: update thunk here
 

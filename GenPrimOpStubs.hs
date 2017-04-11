@@ -17,7 +17,7 @@ import qualified Ast2Ast as LLVM
 import qualified LLVM.Pretty as LLVM
 
 genPAPFun :: G ()
-genPAPFun = emitHsFun LINKAGE_External papFunRawName [] [] $ do
+genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
     -- find out the PAP arity (missing arguments)
     castedPAP <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (mkFunClosureTyP 0)))
@@ -36,9 +36,9 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] [] $ do
     diffArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident funArity) (ident papArity)))
 
     -- Allocate argument array
-    argsRawPtr <- emitInstr $ INSTR_Alloca hsTyP (Just (i64, ident funArity)) Nothing
+    argsRawPtr <- genMallocWords (ident funArity)
     argsPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident argsRawPtr) (envTyP 0)))
+        INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident argsRawPtr) (envTyP 0)))
 
     -- Assemble argument array, part 1: Arguments from PAP
     srcPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,1]
@@ -60,6 +60,12 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] [] $ do
             [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
              (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
 
+    -- Free the argument array
+    casted <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsIdent) ptrTy))
+    genFree (ident casted)
+
+    -- Call the function
     funPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedFun [0,1]
     fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
     emitInstr $ INSTR_Call (hsFunTy, fun) [(hsTyP, ident evaledFun), (envTyP 0, ident argsPtr)]
@@ -133,17 +139,46 @@ genRTSCall = do
 
         -- Too many arguments
         startNamedBlock manyL
-        -- Call with parameter array, taking the first few arguments (same pointer)
-        newFun <- emitInstr $ INSTR_Call (hsFunTy, fun)
-            [(hsTyP, ident evaledFun), (envTyP 0, ident argsPtr)]
-        -- Calculate remaining arity and arguments
+
+        -- Create a new array for the arguments (as the callee will free it)
+        newArgsRawPtr <- genMallocWords (ident funArity)
+        newArgsPtr <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident newArgsRawPtr) (envTyP 0)))
+
+        srcPtr' <-  emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsPtr) ptrTy))
+        destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident newArgsPtr) ptrTy))
+        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident funArity)))
+        emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
+                [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
+                 (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+
+        -- Create a new array for the left-over arguments
         leftOverArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident argArity) (ident funArity)))
         firstArgPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, ident argsPtr) [(i64, SV (VALUE_Integer 0)), (i64, ident funArity)]))
-        leftOverArgs <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident firstArgPtr) (envTyP 0)))
+
+        leftOverArgsRawPtr <- genMallocWords (ident leftOverArity)
+        leftOverArgsPtr <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident leftOverArgsRawPtr) (envTyP 0)))
+
+        srcPtr' <- emitInstr $
+            INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident firstArgPtr) ptrTy))
+        destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident leftOverArgsPtr) ptrTy))
+        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident leftOverArity)))
+        emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
+                [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
+                 (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+
+        -- Free the argument array
+        casted <- emitInstr $
+                INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsPtr) ptrTy))
+        genFree (ident casted)
+
+        -- Call the oversaturated function
+        newFun <- emitInstr $ INSTR_Call (hsFunTy, fun)
+            [(hsTyP, ident evaledFun), (envTyP 0, ident newArgsPtr)]
         -- Call the returned function
         ret <- emitInstr $ INSTR_Call (callTy, callIdent)
-            [(hsTyP, ident newFun), (arityTy, ident leftOverArity), (envTyP 0, ident leftOverArgs)]
+            [(hsTyP, ident newFun), (arityTy, ident leftOverArity), (envTyP 0, ident leftOverArgsPtr)]
         emitTerm $ TERM_Ret (hsTyP, ident ret)
 
     let def = Coq_mk_definition decl [Name "f", Name "arity", Name "args"] blocks
@@ -482,7 +517,9 @@ withArity a x = Just (a,x)
 
 mkPrimFun :: String -> Int -> LG Coq_ident -> G ()
 mkPrimFun name arity body = do
-    emitHsFun LINKAGE_External raw_fun_ident [] (take arity paramRawId) body
+    emitHsFun LINKAGE_External raw_fun_ident [] $ do
+        loadArgs (take arity paramRawId)
+        body
 
     emitAliasedGlobal LINKAGE_External (Name name) hsTy (mkFunClosureTy 0) $
         SV $ VALUE_Struct [ (enterFunTyP,                      ident returnArgIdent)

@@ -56,19 +56,8 @@ mallocRetTy = ptrTy
 mallocTy = TYPE_Function mallocRetTy [i64]
 mallocIdent = ID_Global (Name "malloc")
 
-mallocDecl :: TopLevelThing
-mallocDecl = TLDecl $ Coq_mk_declaration
-    (Name "malloc")
-    mallocTy
-    ([],[[]])
-    Nothing
-    Nothing
-    Nothing
-    Nothing
-    []
-    Nothing
-    Nothing
-    Nothing
+freeTy = TYPE_Function TYPE_Void [ptrTy]
+freeIdent = ID_Global (Name "free")
 
 exitRetTy = TYPE_Void
 exitTy = TYPE_Function exitRetTy [i64]
