@@ -161,6 +161,23 @@ genRTSCall = do
         (Just LINKAGE_External)
         Nothing Nothing Nothing [] Nothing Nothing Nothing
 
+genHsMain :: G ()
+genHsMain = do
+    blocks <- runLG $ do
+        evaled <- genEnterAndEval (ID_Global (Name "ZCMain_main"))
+        genFunctionCall evaled [ID_Global (Name "GHCziPrim_realWorldzh")]
+        genCallToExit (SV (VALUE_Integer 0))
+        -- Returning crashes, the stack is somehow broken.
+        emitTerm $ TERM_Ret (i64, SV (VALUE_Integer 0))
+
+    emitTL $ TLDef $ Coq_mk_definition decl [] blocks
+  where
+    decl = Coq_mk_declaration
+        (Name "hs_main")
+        (TYPE_Function i64 [])
+        ([], [])
+        (Just LINKAGE_External)
+        Nothing Nothing Nothing [] Nothing Nothing Nothing
 
 genNullPtrBox :: G ()
 genNullPtrBox = emitAliasedGlobal LINKAGE_External nullPtrBoxRawId hsTy ptrBoxTy $
@@ -495,6 +512,7 @@ genPrimOp pop | arity == 0 = error (occNameString (primOpOcc pop))
 
 primModule :: Coq_modul
 primModule = mkCoqModul "GHC.Prim" $ runG $ do
+    genHsMain
     genRTSCall
     genPAPFun
     mapM_ emitTL defaultTyDecls

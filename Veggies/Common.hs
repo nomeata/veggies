@@ -236,10 +236,14 @@ genPrintAndExitClosure name msg = do
     msgTy = TYPE_Array (fromIntegral (length msg)) (TYPE_I 8)
     msgTyP = TYPE_Pointer msgTy
 
+genCallToExit :: Coq_value -> LG ()
+genCallToExit r = do
+    emitVoidInstr $ INSTR_Call (exitTy, exitIdent) [(i64, r)]
+
 printAndExit :: String -> LG Coq_ident
 printAndExit msg = do
     str <- liftG $ genRawString msg
     emitVoidInstr $ INSTR_Call (putsTy, putsIdent) [(ptrTy, ident str)]
-    emitVoidInstr $ INSTR_Call (exitTy, exitIdent) [(i64, SV (VALUE_Integer 1))]
+    genCallToExit (SV (VALUE_Integer 1))
     return voidIdent
 
