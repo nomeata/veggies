@@ -79,7 +79,16 @@ genMalloc t = do
     -- http://stackoverflow.com/a/30830445/946226
     offset <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr t (t, SV VALUE_Null) [(TYPE_I 32, SV (VALUE_Integer 1))]))
     size <- emitInstr $ INSTR_Op (SV (OP_Conversion Ptrtoint t (ident offset) (TYPE_I 64)))
-    emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+    genMallocBytes (ident size)
+
+genMallocWords :: Coq_value -> LG Coq_ident
+genMallocWords n = do
+    size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) n))
+    genMallocBytes (ident size)
+
+genMallocBytes :: Coq_value -> LG Coq_ident
+genMallocBytes size = do
+    emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, size)]
 
 
 allocateDataCon :: Integer -> Integer -> (LG (Coq_ident, [Coq_ident] ->  LG ()))

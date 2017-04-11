@@ -101,9 +101,8 @@ genRTSCall = do
         let papTy = mkFunClosureTy 0
         let papTyP = mkFunClosureTyP 0
         -- Dynamic size calculation :-(
-        size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident argArity)))
-        size <- emitInstr $ INSTR_Op (SV (OP_IBinop (Add False False) i64 (SV (VALUE_Integer (4*8))) (ident size)))
-        rawPtr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+        words <- emitInstr $ INSTR_Op (SV (OP_IBinop (Add False False) i64 (SV (VALUE_Integer 4)) (ident argArity)))
+        rawPtr <- genMallocWords (ident words)
         castedPAP <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) papTyP))
         codePtr <- emitInstr $ getElemPtr papTyP castedPAP [0,0]
@@ -428,14 +427,14 @@ primOpBody  UnsafeFreezeByteArrayOp = Just $ do
 primOpBody  NewAlignedPinnedByteArrayOp_Char = Just $ do
    -- Int# -> Int# -> State# s -> (# State# s, MutableByteArray# s #), size first
     size <- unboxPrimValue i64 intBoxTy (p 0)
-    ptr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+    ptr <- genMallocBytes (ident size)
     val <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 2) val
 
 primOpBody  NewPinnedByteArrayOp_Char = Just $ do
    -- Int# -> State# s -> (# State# s, MutableByteArray# s #)
     size <- unboxPrimValue i64 intBoxTy (p 0)
-    ptr <- emitInstr $ INSTR_Call (mallocTy, mallocIdent) [(TYPE_I 64, ident size)]
+    ptr <- genMallocBytes (ident size)
     val <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 1) val
 
