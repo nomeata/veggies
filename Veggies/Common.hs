@@ -101,6 +101,19 @@ genFree :: Coq_value -> LG ()
 genFree ptr = do
     emitVoidInstr $ INSTR_Call (freeTy, freeIdent) [(ptrTy, ptr)]
 
+genMemcopy :: Coq_value -> Coq_value -> Coq_value -> Coq_value -> Coq_value -> LG ()
+genMemcopy from to from_offset to_offset words = do
+    srcPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, from) [(i64, SV (VALUE_Integer 0)), (i64, from_offset)]))
+    srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
+
+    destPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, to) [(i64, SV (VALUE_Integer 0)), (i64, to_offset)]))
+    destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
+
+    nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) words))
+    emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
+        [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
+         (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+
 
 allocateDataCon :: Integer -> Integer -> (LG (Coq_ident, [Coq_ident] ->  LG ()))
 allocateDataCon tag arity = alloc

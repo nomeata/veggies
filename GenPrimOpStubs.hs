@@ -40,25 +40,18 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
     argsPtr <- emitInstr $
         INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident argsRawPtr) (envTyP 0)))
 
+
     -- Assemble argument array, part 1: Arguments from PAP
-    srcPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,1]
-    srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
-    destPtr <- emitInstr $ getElemPtr (envTyP 0) argsPtr [0,0]
-    destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
-    nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident diffArity)))
-    emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
-            [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
-             (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+    papArgs <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3]
+    genMemcopy (ident papArgs)        (ident argsPtr)
+               (SV (VALUE_Integer 1)) (SV (VALUE_Integer 0))
+               (ident diffArity)
+
 
     -- Assemble argument array, part 2: Arguments from caller
-    srcPtr <- emitInstr $ getElemPtr (envTyP 0) argsIdent [0,0]
-    srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
-    destPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, ident argsPtr) [(i64, SV (VALUE_Integer 0)), (i64, ident diffArity)]))
-    destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
-    nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident papArity)))
-    emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
-            [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
-             (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+    genMemcopy (ident argsIdent)      (ident argsPtr)
+               (SV (VALUE_Integer 0)) (ident diffArity)
+               (ident papArity)
 
     -- Free the argument array
     casted <- emitInstr $
@@ -124,14 +117,10 @@ genRTSCall = do
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident firstPayloadPtr) (hsTyP, ident evaledFun) Nothing
 
         -- Save arguments
-        srcPtr <- emitInstr $ getElemPtr (envTyP 0) argsPtr [0,0]
-        srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
-        destPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,1]
-        destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
-        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident argArity)))
-        emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
-                [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
-                 (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+        papArgs <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3]
+        genMemcopy (ident argsIdent)      (ident papArgs)
+                   (SV (VALUE_Integer 0)) (SV (VALUE_Integer 1)) -- offset due to fun ptr
+                   (ident argArity)
 
         pap <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) hsTyP))
@@ -145,28 +134,20 @@ genRTSCall = do
         newArgsPtr <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident newArgsRawPtr) (envTyP 0)))
 
-        srcPtr' <-  emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsPtr) ptrTy))
-        destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident newArgsPtr) ptrTy))
-        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident funArity)))
-        emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
-                [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
-                 (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+        genMemcopy (ident argsPtr)        (ident newArgsPtr)
+                   (SV (VALUE_Integer 0)) (SV (VALUE_Integer 0))
+                   (ident funArity)
 
         -- Create a new array for the left-over arguments
         leftOverArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident argArity) (ident funArity)))
-        firstArgPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, ident argsPtr) [(i64, SV (VALUE_Integer 0)), (i64, ident funArity)]))
 
         leftOverArgsRawPtr <- genMallocWords (ident leftOverArity)
         leftOverArgsPtr <- emitInstr $
             INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident leftOverArgsRawPtr) (envTyP 0)))
 
-        srcPtr' <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident firstArgPtr) ptrTy))
-        destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident leftOverArgsPtr) ptrTy))
-        nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) (ident leftOverArity)))
-        emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
-                [(ptrTy, ident destPtr'), (ptrTy, ident srcPtr'),
-                 (i64, ident nBytes), (i64, SV (VALUE_Integer 0)), (i1, SV (VALUE_Integer 0))]
+        genMemcopy (ident argsPtr)  (ident leftOverArgsPtr)
+                   (ident funArity) (SV (VALUE_Integer 0))
+                   (ident leftOverArity)
 
         -- Free the argument array
         casted <- emitInstr $
