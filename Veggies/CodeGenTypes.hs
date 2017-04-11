@@ -116,24 +116,6 @@ ptrBoxTyP = TYPE_Pointer ptrBoxTy
 nullPtrBoxRawId = Name "rts_null_ptr_box"
 nullPtrBoxIdent = ID_Global nullPtrBoxRawId
 
-badArityTy = TYPE_Function hsTyP []
-badArityIdent = ID_Global (Name "rts_badArity")
-
-badArityDecl :: TopLevelThing
-badArityDecl = TLDecl $ Coq_mk_declaration
-    (Name "rts_badArity")
-    badArityTy
-    ([],[])
-    Nothing
-    Nothing
-    Nothing
-    Nothing
-    []
-    Nothing
-    Nothing
-    Nothing
-
-
 dummyBody :: [Coq_block]
 dummyBody = [ Coq_mk_block (Anon 0)
                 [] (TERM_Ret (hsTyP, SV VALUE_Null))

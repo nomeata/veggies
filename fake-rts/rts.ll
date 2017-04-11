@@ -17,16 +17,6 @@ target triple = "x86_64-pc-linux-gnu"
 declare void @puts(i8* nocapture) nounwind
 declare void @exit(i64) nounwind
 
-
-
-@bad_arity_str = private unnamed_addr constant [11 x i8] c"bad arity\0A\00"
-define %hs* @rts_badArity() {
-  %cast1 = getelementptr [11 x i8], [11 x i8]* @bad_arity_str, i64 0, i64 0
-  call void @puts(i8* %cast1)
-  call void @exit(i64 1)
-  unreachable
-}
-
 define %hs* @rts_printAndExit(%hs* %clos) {
   %cast = bitcast %hs* %clos to %printAndExitClosure*
   %strP = getelementptr %printAndExitClosure, %printAndExitClosure* %cast, i32 0, i32 1
