@@ -47,12 +47,6 @@ emitHsFun linkage fun_name fv_names body = do
         emitTerm $ TERM_Ret (hsTyP, ident ret)
     emitTL $ TLDef $ mkHsFunDefinition linkage fun_name blocks
   where
-    mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_block] -> Coq_definition
-    mkHsFunDefinition linkage n blocks = Coq_mk_definition
-        (mkHsFunDeclaration linkage n)
-        [closRawId, argsRawId]
-        blocks
-
     mkHsFunDeclaration :: Coq_linkage -> Coq_raw_id -> Coq_declaration
     mkHsFunDeclaration linkage n = Coq_mk_declaration
         n
@@ -66,6 +60,13 @@ emitHsFun linkage fun_name fv_names body = do
         Nothing
         Nothing
         Nothing
+
+    mkHsFunDefinition :: Coq_linkage -> Coq_raw_id -> [Coq_block] -> Coq_definition
+    mkHsFunDefinition linkage n blocks = Coq_mk_definition
+        (mkHsFunDeclaration linkage n)
+        [closRawId, argsRawId]
+        blocks
+
 
 
 genFunctionCall :: Coq_ident -> [Coq_ident] -> LG Coq_ident
