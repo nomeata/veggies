@@ -314,8 +314,8 @@ Library
     c-sources:
          cbits/WCsubst.c
          cbits/inputReady.c
+         cbits/PrelIOUtils.c
     --     cbits/DarwinUtils.c
-    --     cbits/PrelIOUtils.c
     --     cbits/SetEnv.c
     --     cbits/Win32Utils.c
     --     cbits/consUtils.c

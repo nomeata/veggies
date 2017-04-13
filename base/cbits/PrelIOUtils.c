@@ -11,12 +11,14 @@
 
 void errorBelch2(const char*s, char *t)
 {
-    errorBelch(s,t);
+  fprintf(stderr, s, t);
+  fprintf(stderr, "\n");
 }
 
 void debugBelch2(const char*s, char *t)
 {
-    debugBelch(s,t);
+    fprintf(stderr, s, t);
+    fflush(stderr);
 }
 
 #if defined(HAVE_LIBCHARSET)

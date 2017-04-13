@@ -119,6 +119,26 @@ mkFFICall "ghczuwrapperZC20ZCbaseZCSystemziPosixziInternalsZCwrite" args = do
         ]
     retBox <- boxPrimValue i64 intBoxTy (ident ret)
     genReturnIO (args !! 3) retBox
+mkFFICall "debugBelch2" args = do
+    a1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
+    a2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
+    let fun_ty = TYPE_Function TYPE_Void [ptrTy, ptrTy]
+        fun_ident = ID_Global (Name "debugBelch2")
+    emitVoidInstr $ INSTR_Call (fun_ty, fun_ident)
+        [ (ptrTy, ident a1)
+        , (ptrTy, ident a2)
+        ]
+    return (args !! 2)
+mkFFICall "errorBelch2" args = do
+    a1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
+    a2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
+    let fun_ty = TYPE_Function TYPE_Void [ptrTy, ptrTy]
+        fun_ident = ID_Global (Name "errorBelch2")
+    emitVoidInstr $ INSTR_Call (fun_ty, fun_ident)
+        [ (ptrTy, ident a1)
+        , (ptrTy, ident a2)
+        ]
+    return (args !! 2)
 mkFFICall "rtsSupportsBoundThreads" args = do
     res <- liftG $ genIntegerLit 0
     genReturnIO (args !! 0) res
