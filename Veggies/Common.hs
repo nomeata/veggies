@@ -142,6 +142,17 @@ allocateDataCon tag arity = alloc
     thisDataConTy = mkDataConTy arity
     thisDataConTyP = TYPE_Pointer thisDataConTy
 
+overrideWithIndirection :: Coq_ident -> Coq_ident -> LG ()
+overrideWithIndirection dest indirectee = do
+    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dest) indTyP))
+
+    codePtr <- emitInstr $ getElemPtr indTyP casted [0,0]
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident indirectionIdent) Nothing
+
+    indirecteePtr <- emitInstr $ getElemPtr indTyP casted [0,1]
+    emitVoidInstr $ INSTR_Store False (TYPE_Pointer hsTyP, ident indirecteePtr) (hsTyP, ident indirectee) Nothing
+
+
 boxPrimValue :: Coq_typ -> Coq_typ -> Coq_value -> LG Coq_ident
 boxPrimValue valTy boxTy v = do
     boxRawPtr <- genMalloc boxTyP

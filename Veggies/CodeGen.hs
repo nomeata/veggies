@@ -188,7 +188,8 @@ genStaticVal env v rhs | exprIsHNF rhs = do
 genStaticVal env v rhs = do
     blocks <- runLG $ do
         ret <- genExpr env rhs
-        -- TODO: update thunk here
+        -- update the thunk
+        overrideWithIndirection closIdent ret
         emitTerm $ TERM_Ret (hsTyP, ident ret)
     emitTL $ TLDef $ mkEnterFunDefinition
         LINKAGE_Internal
@@ -428,7 +429,6 @@ genLetBind env v rhs | exprIsHNF rhs =
       emitHsFun LINKAGE_Internal (funRawId v) [ varRawId p | p <- fvs ] $ do
         loadArgs [ varRawId p | p <- params ]
         genExpr env body
-        -- TODO: update thunk here
 
 -- A let-bound thunk
 genLetBind env v rhs = alloc
@@ -462,9 +462,11 @@ genLetBind env v rhs = alloc
             p <- emitInstr $ getElemPtr thisThunkTyP castedClosPtr [0,1,n]
             emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing
         -- evaluate body
-        res <- genExpr env rhs
-        -- TODO: update thunk here
-        emitTerm $ TERM_Ret (hsTyP, ident res)
+        ret <- genExpr env rhs
+
+        -- update the thunk
+        overrideWithIndirection closIdent ret
+        emitTerm $ TERM_Ret (hsTyP, ident ret)
       emitTL $ TLDef $ mkEnterFunDefinition
             LINKAGE_Internal
             (funRawId v)

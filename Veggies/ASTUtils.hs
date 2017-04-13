@@ -85,7 +85,7 @@ mkAliasedGlobal linkage name tmpName exportedTy realTy val =
     [ TLGlobal $ Coq_mk_global
         tmpName
         realTy
-        True
+        False -- constant
         (Just val)
         (Just LINKAGE_Private)
         Nothing
