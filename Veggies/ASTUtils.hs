@@ -43,11 +43,16 @@ mkCoqModul name top_level_things
 
 ident id = SV (VALUE_Ident id)
 
-noop ty val = INSTR_Op (SV (OP_Conversion Bitcast ty val ty))
 
 getElemPtr :: Coq_typ -> Coq_ident -> [Integer] -> Coq_instr
 getElemPtr t v path
     = INSTR_Op (SV (OP_GetElementPtr t (t, ident v) [(i32, SV (VALUE_Integer n))| n <- path]))
+
+bitCast :: Coq_typ -> Coq_ident -> Coq_typ -> Coq_instr
+bitCast t1 v t2 = INSTR_Op (SV (OP_Conversion Bitcast t1 (ident v) t2))
+
+noop :: Coq_typ -> Coq_ident -> Coq_instr
+noop ty val = bitCast ty val ty
 
 memcpyTy = TYPE_Function TYPE_Void [ptrTy, ptrTy, i64, i64, i1]
 memcpyIdent = ID_Global (Name "llvm.memcpy.p0i8.p0i8.i64")

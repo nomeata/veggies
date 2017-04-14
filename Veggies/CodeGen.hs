@@ -235,7 +235,7 @@ genExpr env (Case scrut b _ alts) = do
     scrut_eval <- genExpr env scrut
     emitNamedInstr (varRawId b) $ noop hsTyP (ident scrut_eval)
 
-    emitNamedInstr scrut_cast_raw_id $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident scrut_eval) scrut_cast_tyP))
+    emitNamedInstr scrut_cast_raw_id $ bitCast hsTyP scrut_eval scrut_cast_tyP
 
     case alts of
         [(_, pats, rhs)] ->
@@ -402,16 +402,14 @@ genLetBind env v rhs | exprIsHNF rhs =
 
     alloc = do
         closureRawPtr <- genMalloc thisFunClosureTyP
-        emitNamedInstr (varRawId v) $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident closureRawPtr) hsTyP))
+        emitNamedInstr (varRawId v) $ bitCast mallocRetTy closureRawPtr hsTyP
 
         liftG $ genFunCode
 
         return fill
 
     fill = do
-        castedPtr <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (varIdent env v)) thisFunClosureTyP))
+        castedPtr <- emitInstr $ bitCast hsTyP (varIdent env v) thisFunClosureTyP
 
         p <- emitInstr $ getElemPtr thisFunClosureTyP castedPtr [0,0]
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident p) (enterFunTyP, ident returnArgIdent) Nothing
@@ -435,16 +433,14 @@ genLetBind env v rhs = alloc
   where
     alloc = do
         thunkRawPtr <- genMalloc thisThunkTyP
-        emitNamedInstr (varRawId v) $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident thunkRawPtr) hsTyP))
+        emitNamedInstr (varRawId v) $ bitCast mallocRetTy thunkRawPtr hsTyP
 
         liftG $ genThunkCode
 
         return fill
 
     fill = do
-        castedPtr <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (varIdent env v)) thisThunkTyP))
+        castedPtr <- emitInstr $ bitCast hsTyP (varIdent env v) thisThunkTyP
 
         p <- emitInstr $ getElemPtr thisThunkTyP castedPtr [0,0]
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident p) (enterFunTyP, ident (funIdent env v)) Nothing
@@ -456,8 +452,7 @@ genLetBind env v rhs = alloc
     genThunkCode = do
       blocks <- runLG $ do
         -- load free variables
-        castedClosPtr <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) thisThunkTyP))
+        castedClosPtr <- emitInstr $ bitCast hsTyP closIdent thisThunkTyP
         forM_ (zip [0..] fvs) $ \(n,fv) -> do
             p <- emitInstr $ getElemPtr thisThunkTyP castedClosPtr [0,1,n]
             emitNamedInstr (varRawId fv) $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident p) Nothing

@@ -19,16 +19,14 @@ import qualified LLVM.Pretty as LLVM
 genPAPFun :: G ()
 genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
     -- find out the PAP arity (missing arguments)
-    castedPAP <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (mkFunClosureTyP 0)))
+    castedPAP <- emitInstr $ bitCast hsTyP closIdent (mkFunClosureTyP 0)
     arityPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,2]
     papArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
 
     -- find out the function arity (all arguments)
     evaledFunPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,0]
     evaledFun <- emitInstr $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident evaledFunPtr) Nothing
-    castedFun <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) (mkFunClosureTyP 0)))
+    castedFun <- emitInstr $ bitCast hsTyP evaledFun (mkFunClosureTyP 0)
     arityPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedFun [0,2]
     funArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
 
@@ -37,8 +35,7 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
 
     -- Allocate argument array
     argsRawPtr <- genMallocWords (ident funArity)
-    argsPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident argsRawPtr) (envTyP 0)))
+    argsPtr <- emitInstr $ bitCast ptrTy argsRawPtr (envTyP 0)
 
 
     -- Assemble argument array, part 1: Arguments from PAP
@@ -54,8 +51,7 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
                (ident papArity)
 
     -- Free the argument array
-    casted <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsIdent) ptrTy))
+    casted <- emitInstr $ bitCast (envTyP 0) argsIdent ptrTy
     genFree (ident casted)
 
     -- Call the function
@@ -68,8 +64,7 @@ genRTSCall = do
     blocks <- runLG $ do
         let thisFunClosTyP = TYPE_Pointer (mkFunClosureTy 0)
 
-        castedFun <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident evaledFun) thisFunClosTyP))
+        castedFun <- emitInstr $ bitCast hsTyP evaledFun thisFunClosTyP
         funPtr <- emitInstr $ getElemPtr thisFunClosTyP castedFun [0,1]
         fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
 
@@ -102,8 +97,7 @@ genRTSCall = do
         -- Dynamic size calculation :-(
         words <- emitInstr $ INSTR_Op (SV (OP_IBinop (Add False False) i64 (SV (VALUE_Integer 4)) (ident argArity)))
         rawPtr <- genMallocWords (ident words)
-        castedPAP <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) papTyP))
+        castedPAP <- emitInstr $ bitCast mallocRetTy rawPtr papTyP
         codePtr <- emitInstr $ getElemPtr papTyP castedPAP [0,0]
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
         funPtr <- emitInstr $ getElemPtr papTyP castedPAP [0,1]
@@ -122,8 +116,7 @@ genRTSCall = do
                    (SV (VALUE_Integer 0)) (SV (VALUE_Integer 1)) -- offset due to fun ptr
                    (ident argArity)
 
-        pap <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident rawPtr) hsTyP))
+        pap <- emitInstr $ bitCast mallocRetTy rawPtr hsTyP
         emitTerm $ TERM_Ret (hsTyP, ident pap)
 
         -- Too many arguments
@@ -131,8 +124,7 @@ genRTSCall = do
 
         -- Create a new array for the arguments (as the callee will free it)
         newArgsRawPtr <- genMallocWords (ident funArity)
-        newArgsPtr <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident newArgsRawPtr) (envTyP 0)))
+        newArgsPtr <- emitInstr $ bitCast ptrTy newArgsRawPtr (envTyP 0)
 
         genMemcopy (ident argsPtr)        (ident newArgsPtr)
                    (SV (VALUE_Integer 0)) (SV (VALUE_Integer 0))
@@ -142,16 +134,14 @@ genRTSCall = do
         leftOverArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident argArity) (ident funArity)))
 
         leftOverArgsRawPtr <- genMallocWords (ident leftOverArity)
-        leftOverArgsPtr <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident leftOverArgsRawPtr) (envTyP 0)))
+        leftOverArgsPtr <- emitInstr $ bitCast ptrTy leftOverArgsRawPtr (envTyP 0)
 
         genMemcopy (ident argsPtr)  (ident leftOverArgsPtr)
                    (ident funArity) (SV (VALUE_Integer 0))
                    (ident leftOverArity)
 
         -- Free the argument array
-        casted <- emitInstr $
-                INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsPtr) ptrTy))
+        casted <- emitInstr $ bitCast (envTyP 0) argsPtr ptrTy
         genFree (ident casted)
 
         -- Call the oversaturated function
@@ -225,11 +215,9 @@ primOpBody TagToEnumOp = Just $ do
             INSTR_Op (SV (OP_IBinop (Add False False) i64 (ident tag) (SV (VALUE_Integer 1))))
 
     dcRawPtr <- genMalloc thisDataConTyP
-    dc <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident dcRawPtr) hsTyP))
+    dc <- emitInstr $ bitCast mallocRetTy dcRawPtr hsTyP
 
-    dcCasted <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dc) thisDataConTyP))
+    dcCasted <- emitInstr $ bitCast hsTyP dc thisDataConTyP
 
     codePtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,0]
     emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
@@ -302,7 +290,7 @@ primOpBody ReadOffAddrOp_Int8 = Just $ do
 
 primOpBody ReadOffAddrOp_Word64 = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i64)))
+    castPtr <- emitInstr $ bitCast ptrTy ptr (TYPE_Pointer i64)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i64) (TYPE_Pointer i64, ident castPtr) [(i64, ident offset)]))
     val <- emitInstr $ INSTR_Load False i64 (TYPE_Pointer i64, ident resP) Nothing
@@ -311,7 +299,7 @@ primOpBody ReadOffAddrOp_Word64 = Just $ do
 
 primOpBody ReadOffAddrOp_WideChar = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i32)))
+    castPtr <- emitInstr $ bitCast ptrTy ptr (TYPE_Pointer i32)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     resP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i32) (TYPE_Pointer i32, ident castPtr) [(i64, ident offset)]))
     val <- emitInstr $ INSTR_Load False i32 (TYPE_Pointer i32, ident resP) Nothing
@@ -344,7 +332,7 @@ primOpBody WriteOffAddrOp_Word8 = Just $ do
 
 primOpBody WriteOffAddrOp_WideChar = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    i32Ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i32)))
+    i32Ptr <- emitInstr $ bitCast ptrTy ptr (TYPE_Pointer i32)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     wcharP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i32) (TYPE_Pointer i32, ident i32Ptr) [(i64, ident offset)]))
 
@@ -356,7 +344,7 @@ primOpBody WriteOffAddrOp_WideChar = Just $ do
 
 primOpBody WriteOffAddrOp_Addr = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer ptrTy)))
+    castPtr <- emitInstr $ bitCast ptrTy ptr (TYPE_Pointer ptrTy)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     destP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer ptrTy) (TYPE_Pointer ptrTy, ident castPtr) [(i64, ident offset)]))
 
@@ -367,7 +355,7 @@ primOpBody WriteOffAddrOp_Addr = Just $ do
 
 primOpBody WriteOffAddrOp_Word64 = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    castPtr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) (TYPE_Pointer i64)))
+    castPtr <- emitInstr $ bitCast ptrTy ptr (TYPE_Pointer i64)
     offset <- unboxPrimValue i64 intBoxTy (p 1)
     destP <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (TYPE_Pointer i64) (TYPE_Pointer i64, ident castPtr) [(i64, ident offset)]))
 
@@ -377,37 +365,37 @@ primOpBody WriteOffAddrOp_Word64 = Just $ do
     return (p 3)
 
 primOpBody MakeStablePtrOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 0)) ptrTy))
+    ptr <- emitInstr $ bitCast hsTyP (p 0) ptrTy
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 1) res
 
 primOpBody DeRefStablePtrOp = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
+    emitInstr $ bitCast ptrTy ptr hsTyP
 
 primOpBody NewMVarOp = Just $ do
     res <- boxPrimValue ptrTy ptrBoxTy (SV VALUE_Null)
     genReturnIO (p 0) res
 primOpBody PutMVarOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    ptr <- emitInstr $ bitCast hsTyP (p 1) ptrTy
     setPrimValue ptrTy ptrBoxTy (p 0) (ident ptr)
     return (p 2)
 primOpBody TakeMVarOp = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
+    val <- emitInstr $ bitCast ptrTy ptr hsTyP
     genReturnIO (p 1) val
 
 primOpBody NewMutVarOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 0)) ptrTy))
+    ptr <- emitInstr $ bitCast hsTyP (p 0) ptrTy
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 1) res
 primOpBody WriteMutVarOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    ptr <- emitInstr $ bitCast hsTyP (p 1) ptrTy
     setPrimValue ptrTy ptrBoxTy (p 0) (ident ptr)
     return (p 2)
 primOpBody ReadMutVarOp = Just $ do
     ptr <- unboxPrimValue ptrTy ptrBoxTy (p 0)
-    val <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident ptr) hsTyP))
+    val <- emitInstr $ bitCast ptrTy ptr hsTyP
     genReturnIO (p 1) val
 
 primOpBody Narrow8IntOp = Just $ do
@@ -474,11 +462,11 @@ primOpBody MaskStatus = Just $ do
     genReturnIO (p 0) zero
 
 primOpBody MkWeakOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    ptr <- emitInstr $ bitCast hsTyP (p 1) ptrTy
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 3) res
 primOpBody MkWeakNoFinalizerOp = Just $ do
-    ptr <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident (p 1)) ptrTy))
+    ptr <- emitInstr $ bitCast hsTyP (p 1) ptrTy
     res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
     genReturnIO (p 2) res
 

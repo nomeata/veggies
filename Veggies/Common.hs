@@ -31,16 +31,14 @@ loadEnv envIdent names = do
 loadArgs :: [Coq_raw_id] -> LG ()
 loadArgs arg_names = do
     loadEnv argsIdent arg_names
-    casted <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast (envTyP 0) (ident argsIdent) ptrTy))
+    casted <- emitInstr $ bitCast (envTyP 0) argsIdent ptrTy
     genFree (ident casted)
 
 
 emitHsFun :: Coq_linkage -> Coq_raw_id -> [Coq_raw_id] ->  LG Coq_ident -> G ()
 emitHsFun linkage fun_name fv_names body = do
     blocks <- runLG $ do
-        casted <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident closIdent) (mkFunClosureTyP 0)))
+        casted <- emitInstr $ bitCast hsTyP closIdent (mkFunClosureTyP 0)
         fv_env <- emitInstr $ getElemPtr (mkFunClosureTyP 0) casted [0,3]
         loadEnv fv_env fv_names
         ret <- body
@@ -75,8 +73,7 @@ genFunctionCall evaledFun args_locals = do
     let arity = fromIntegral (length args_locals)
 
     argsRawPtr <- genMallocWords (SV (VALUE_Integer arity))
-    argsPtr <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast ptrTy (ident argsRawPtr) (envTyP 0)))
+    argsPtr <- emitInstr $ bitCast ptrTy argsRawPtr (envTyP 0)
     storeEnv 0 argsPtr args_locals
 
     emitInstr $ INSTR_Call (callTy, callIdent)
@@ -105,10 +102,10 @@ genFree ptr = do
 genMemcopy :: Coq_value -> Coq_value -> Coq_value -> Coq_value -> Coq_value -> LG ()
 genMemcopy from to from_offset to_offset words = do
     srcPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, from) [(i64, SV (VALUE_Integer 0)), (i64, from_offset)]))
-    srcPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident srcPtr) ptrTy))
+    srcPtr' <- emitInstr $ bitCast (TYPE_Pointer hsTyP) srcPtr ptrTy
 
     destPtr <- emitInstr $ INSTR_Op (SV (OP_GetElementPtr (envTyP 0) (envTyP 0, to) [(i64, SV (VALUE_Integer 0)), (i64, to_offset)]))
-    destPtr' <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast (TYPE_Pointer hsTyP) (ident destPtr) ptrTy))
+    destPtr' <- emitInstr $ bitCast (TYPE_Pointer hsTyP) destPtr ptrTy
 
     nBytes <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i64 (SV (VALUE_Integer 8)) words))
     emitVoidInstr $ INSTR_Call (memcpyTy, memcpyIdent)
@@ -121,13 +118,11 @@ allocateDataCon tag arity = alloc
   where
     alloc = do
         dcRawPtr <- genMalloc thisDataConTyP
-        dc <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident dcRawPtr) hsTyP))
+        dc <- emitInstr $ bitCast mallocRetTy dcRawPtr hsTyP
         return (dc, fill dc)
 
     fill dcClosure args = do
-        dcCasted <- emitInstr $
-            INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dcClosure) thisDataConTyP))
+        dcCasted <- emitInstr $ bitCast hsTyP dcClosure thisDataConTyP
 
         codePtr <- emitInstr $ getElemPtr thisDataConTyP dcCasted [0,0]
         emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
@@ -144,7 +139,7 @@ allocateDataCon tag arity = alloc
 
 overrideWithIndirection :: Coq_ident -> Coq_ident -> LG ()
 overrideWithIndirection dest indirectee = do
-    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident dest) indTyP))
+    casted <- emitInstr $ bitCast hsTyP dest indTyP
 
     codePtr <- emitInstr $ getElemPtr indTyP casted [0,0]
     emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident indirectionIdent) Nothing
@@ -156,11 +151,9 @@ overrideWithIndirection dest indirectee = do
 boxPrimValue :: Coq_typ -> Coq_typ -> Coq_value -> LG Coq_ident
 boxPrimValue valTy boxTy v = do
     boxRawPtr <- genMalloc boxTyP
-    box <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast mallocRetTy (ident boxRawPtr) hsTyP))
+    box <- emitInstr $ bitCast mallocRetTy boxRawPtr hsTyP
 
-    casted <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident box) boxTyP))
+    casted <- emitInstr $ bitCast hsTyP box boxTyP
     codePtr <- emitInstr $ getElemPtr boxTyP casted [0,0]
     emitVoidInstr $ INSTR_Store False (TYPE_Pointer enterFunTyP, ident codePtr) (enterFunTyP, ident returnArgIdent) Nothing
 
@@ -172,8 +165,7 @@ boxPrimValue valTy boxTy v = do
 
 setPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> Coq_value -> LG ()
 setPrimValue valTy boxTy box v = do
-    casted <- emitInstr $
-        INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident box) boxTyP))
+    casted <- emitInstr $ bitCast hsTyP box boxTyP
 
     valPtr <- emitInstr $ getElemPtr boxTyP casted [0,1]
     emitVoidInstr $ INSTR_Store False (valTyP, ident valPtr) (valTy, v) Nothing
@@ -184,7 +176,7 @@ setPrimValue valTy boxTy box v = do
 
 unboxPrimValue :: Coq_typ -> Coq_typ -> Coq_ident -> LG Coq_ident
 unboxPrimValue valTy boxTy v = do
-    casted <- emitInstr $ INSTR_Op (SV (OP_Conversion Bitcast hsTyP (ident v) boxTyP))
+    casted <- emitInstr $ bitCast hsTyP v boxTyP
     valPtr <- emitInstr $ getElemPtr boxTyP casted [0,1]
     emitInstr $ INSTR_Load False valTy (valTyP, ident valPtr) Nothing
   where boxTyP = TYPE_Pointer boxTy
