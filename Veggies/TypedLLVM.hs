@@ -21,7 +21,11 @@ import qualified Veggies.GenMonad as G
 import qualified Veggies.ASTUtils as G
 import qualified Veggies.Common as G
 
--- A copy of Coq_typ, for the sole purpose of avoiding the unpromoted Integer argument to TYPE_I
+-- A copy of Coq_typ
+--
+-- I would prefer to just use the promoted Coq_typ directly. But unfortunately,
+-- it uses the type `Integer`, which is useless in its promoted form. Therefore
+-- the I8, I32 and I64 constructors below.
 
 data LLVM_typ
     = I8 | I32 | I64
@@ -31,6 +35,8 @@ data LLVM_typ
     | Array Nat LLVM_typ
     | Void
     | Named Symbol
+
+-- Some aliases. These correspond to function definitions in Veggies.CodeGenTypes
 
 type FunClosure = Struct [EnterFunP, HsFunP, I64, Env]
 type FunClosureP = Pointer FunClosure
@@ -49,15 +55,20 @@ type Ptr = Pointer I8
 
 -- General setup
 
+-- This annotates any type (usually an LLVM value, identifier, instruction
+-- etc.) with an LLVM type.
+
 type v ::: (t :: LLVM_typ) = Tagged t v
+
+-- Converting types to terms:
 
 class GetType (t :: LLVM_typ) where
     typ :: Coq_typ
-class GetTypes (t :: [LLVM_typ]) where
-    types :: [Coq_typ]
 
 typed :: forall t a. GetType t => a ::: t -> (Coq_typ, a)
 typed (Tagged x) = (typ @t, x)
+
+-- A heterogenous list
 
 data Many what (tys :: [LLVM_typ]) where
     ManyNil  :: Many what '[]
@@ -70,7 +81,7 @@ typeds :: Many what tys -> [(Coq_typ, what)]
 typeds ManyNil = []
 typeds (ManyCons a as) = typed a : typeds as
 
--- Boiler plate
+-- This is annoying boiler plate
 
 instance GetType I8 where
     typ = TYPE_I 8
@@ -91,10 +102,16 @@ instance GetTypes tys => GetType (Struct tys) where
 instance KnownSymbol s => GetType (Named s) where
     typ = TYPE_Identified (ID_Global (Name (symbolVal @s undefined)))
 
+-- Mapping the GetTypes type class over a list
+class GetTypes (t :: [LLVM_typ]) where
+    types :: [Coq_typ]
 instance GetTypes '[] where
     types = []
 instance (GetType t, GetTypes tys) => GetTypes (t:tys) where
     types = (typ @t) : (types @tys)
+
+
+-- Now the type-safe API starts
 
 -- Literals
 
@@ -116,9 +133,38 @@ emitVoidInstr (Tagged i) = G.emitVoidInstr i
 
 -- Instructions
 
+
+-- Binary operations have the same type everywhere
+ibinop :: forall t. GetType t =>
+    Coq_ibinop ->
+    Coq_value ::: t ->
+    Coq_value ::: t ->
+    Coq_instr ::: t
+ibinop op o1 o2 = Tagged $ INSTR_Op (SV (OP_IBinop op (typ @t) (unTagged o1) (unTagged o2)))
+
+-- Load is simple, but does some helpful matching of types
+load :: forall t. GetType t => Coq_ident ::: Pointer t -> Coq_instr ::: t
+load v = Tagged $ INSTR_Load False (typ @t) (typed (ident v)) Nothing
+
+
+-- bit cast. Type inference can sometimes find out the return type!
 bitCast :: forall t1 t2. (GetType t1, GetType t2) =>
     Coq_ident ::: Pointer t1 -> Coq_instr ::: Pointer t2
 bitCast (Tagged v) = Tagged $ G.bitCast (typ @(Pointer t1)) v (typ @(Pointer t2))
+
+
+-- Call is somewhat tricky, due to the list of arguments
+call :: forall ret_ty arg_tys.
+    (GetType ret_ty, GetTypes arg_tys) =>
+    Coq_ident ::: (Pointer (Function ret_ty arg_tys)) ->
+    Many Coq_value arg_tys ->
+    Coq_instr ::: ret_ty
+call f args = Tagged $ INSTR_Call (typed f) (typeds args)
+
+
+-- The most advanced machinery: Given a list of indices (GEP_Args) with some
+-- information on the type level ([GEP_Arg]), calculate the type of the addressed
+-- member in some deeply nested type structor
 
 data GEP_Arg where
     Known   :: Nat -> GEP_Arg
@@ -129,18 +175,7 @@ data GEP_Args (args :: [GEP_Arg])  where
     AKnown   :: KnownNat n => proxy n -> GEP_Args xs -> GEP_Args (Known n : xs)
     AUnknown :: Coq_value ::: I64 -> GEP_Args xs -> GEP_Args (Unknown : xs)
 
-class AllKnown (nats :: [Nat]) where
-    allKnown :: GEP_Args (OnlyKnows nats)
-
-type family OnlyKnows (nats :: [Nat])  = (r :: [GEP_Arg]) | r -> nats where
-    OnlyKnows '[] = '[]
-    OnlyKnows (n:ns) = Known n : OnlyKnows ns
-
-instance AllKnown '[] where
-    allKnown = None
-instance (KnownNat n, AllKnown ns) => AllKnown (n:ns) where
-    allKnown = AKnown undefined allKnown
-
+-- This does the calculation of the return type
 type family GEP_Res (t :: LLVM_typ) (as :: [GEP_Arg]) :: LLVM_typ where
     GEP_Res t2 '[] = t2
     GEP_Res (Struct ts)  (Known n : as) = GEP_Res (Nth ts n) as
@@ -152,6 +187,19 @@ type family Nth (xs :: [a]) n :: a where
     Nth (x:xs) 0 = x
     Nth (x:xs) n = Nth xs (n-1)
 
+-- Convenience function if all arguments are known
+class AllKnown (nats :: [Nat]) where
+    allKnown :: GEP_Args (OnlyKnows nats)
+type family OnlyKnows (nats :: [Nat])  = (r :: [GEP_Arg]) | r -> nats where
+    OnlyKnows '[] = '[]
+    OnlyKnows (n:ns) = Known n : OnlyKnows ns
+instance AllKnown '[] where
+    allKnown = None
+instance (KnownNat n, AllKnown ns) => AllKnown (n:ns) where
+    allKnown = AKnown undefined allKnown
+
+-- Term level now
+
 getGEPArgs :: GEP_Args args -> [Coq_tvalue]
 getGEPArgs None = []
 getGEPArgs (AKnown p as) = (G.i32, SV (VALUE_Integer (natVal p))) : getGEPArgs as
@@ -159,6 +207,7 @@ getGEPArgs (AKnown p as) = (G.i32, SV (VALUE_Integer (natVal p))) : getGEPArgs a
     -- having a proxy field in AKnown
 getGEPArgs (AUnknown v as) = typed v : getGEPArgs as
 
+-- The GetElementPointer instruction
 getElemPtr ::
     forall (t :: LLVM_typ) (args :: [GEP_Arg]).
     GetType t =>
@@ -169,22 +218,8 @@ getElemPtr p args
     = Tagged $ INSTR_Op (SV (OP_GetElementPtr (typ @t) (typed (ident p)) (getGEPArgs args)))
 
 
-load :: forall t. GetType t => Coq_ident ::: Pointer t -> Coq_instr ::: t
-load v = Tagged $ INSTR_Load False (typ @t) (typed (ident v)) Nothing
 
-call :: forall ret_ty arg_tys.
-    (GetType ret_ty, GetTypes arg_tys) =>
-    Coq_ident ::: (Pointer (Function ret_ty arg_tys)) ->
-    Many Coq_value arg_tys ->
-    Coq_instr ::: ret_ty
-call f args = Tagged $ INSTR_Call (typed f) (typeds args)
-
-ibinop :: forall t. GetType t =>
-    Coq_ibinop ->
-    Coq_value ::: t ->
-    Coq_value ::: t ->
-    Coq_instr ::: t
-ibinop op o1 o2 = Tagged $ INSTR_Op (SV (OP_IBinop op (typ @t) (unTagged o1) (unTagged o2)))
+-- Some wrappers around convenience functions (which in fact could be implemented in the type-safe interface)
 
 genMallocWords :: Coq_value ::: I64 -> LG (Coq_ident ::: Ptr)
 genMallocWords (Tagged v) = Tagged <$> G.genMallocWords v

@@ -29,7 +29,6 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
     let closIdent' = Tagged @T.HsP closIdent
 
     -- find out the PAP arity (missing arguments)
-    -- castedPAP <- emitInstr $ bitCast hsTyP closIdent (mkFunClosureTyP 0)
     castedPAP <- T.emitInstr @T.FunClosureP $ T.bitCast (Tagged @T.HsP closIdent)
     arityPtr <- T.emitInstr $ T.getElemPtr castedPAP (T.allKnown @[0,2])
     papArity <- T.emitInstr $ T.load arityPtr
@@ -37,7 +36,6 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
     -- find out the function arity (all arguments)
     evaledFunPtr <- T.emitInstr $ T.getElemPtr castedPAP (T.allKnown @[0,3,0])
     evaledFun <- T.emitInstr $ T.load evaledFunPtr
-    --castedFun <- emitInstr $ bitCast hsTyP evaledFun (mkFunClosureTyP 0)
     castedFun <- T.emitInstr @T.FunClosureP $ T.bitCast evaledFun
     arityPtr <- T.emitInstr $ T.getElemPtr castedFun (T.allKnown @[0,2])
     funArity <- T.emitInstr $ T.load arityPtr
@@ -47,7 +45,6 @@ genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
 
     -- Allocate argument array
     argsRawPtr <- T.genMallocWords (T.ident funArity)
-    -- argsPtr <- emitInstr $ bitCast ptrTy argsRawPtr (envTyP 0)
     argsPtr <- T.emitInstr $ T.bitCast argsRawPtr
 
 
