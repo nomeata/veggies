@@ -51,8 +51,8 @@ getElemPtr t v path
 bitCast :: Coq_typ -> Coq_ident -> Coq_typ -> Coq_instr
 bitCast t1 v t2 = INSTR_Op (SV (OP_Conversion Bitcast t1 (ident v) t2))
 
-noop :: Coq_typ -> Coq_ident -> Coq_instr
-noop ty val = bitCast ty val ty
+noop :: Coq_typ -> Coq_value -> Coq_instr
+noop t v = INSTR_Op (SV (OP_Conversion Bitcast t v t))
 
 memcpyTy = TYPE_Function TYPE_Void [ptrTy, ptrTy, i64, i64, i1]
 memcpyIdent = ID_Global (Name "llvm.memcpy.p0i8.p0i8.i64")
