@@ -30,6 +30,7 @@ install:
     - cabal install groom
     - cabal install llvm-hs-pure
     - cabal install wl-pprint-text
+    - cabal install tagged
 
 script:
     - ./boot.sh out/
