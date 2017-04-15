@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DataKinds #-}
 import PrimOp
 import Encoding
 import OccName
@@ -13,51 +15,63 @@ import Veggies.CodeGenTypes
 import Veggies.ASTUtils
 import Veggies.Common
 
+import qualified Veggies.TypedLLVM as T
+
 import qualified Ast2Ast as LLVM
 import qualified LLVM.Pretty as LLVM
 
+import Data.Tagged
+
+
 genPAPFun :: G ()
 genPAPFun = emitHsFun LINKAGE_External papFunRawName [] $ do
+    let argsIdent' = Tagged @T.EnvP argsIdent
+    let closIdent' = Tagged @T.HsP closIdent
+
     -- find out the PAP arity (missing arguments)
-    castedPAP <- emitInstr $ bitCast hsTyP closIdent (mkFunClosureTyP 0)
-    arityPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,2]
-    papArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
+    -- castedPAP <- emitInstr $ bitCast hsTyP closIdent (mkFunClosureTyP 0)
+    castedPAP <- T.emitInstr @T.FunClosureP $ T.bitCast (Tagged @T.HsP closIdent)
+    arityPtr <- T.emitInstr $ T.getElemPtr castedPAP (T.allKnown @[0,2])
+    papArity <- T.emitInstr $ T.load arityPtr
 
     -- find out the function arity (all arguments)
-    evaledFunPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3,0]
-    evaledFun <- emitInstr $ INSTR_Load False hsTyP (TYPE_Pointer hsTyP, ident evaledFunPtr) Nothing
-    castedFun <- emitInstr $ bitCast hsTyP evaledFun (mkFunClosureTyP 0)
-    arityPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedFun [0,2]
-    funArity <- emitInstr $ INSTR_Load False arityTy (arityTyP, ident arityPtr) Nothing
+    evaledFunPtr <- T.emitInstr $ T.getElemPtr castedPAP (T.allKnown @[0,3,0])
+    evaledFun <- T.emitInstr $ T.load evaledFunPtr
+    --castedFun <- emitInstr $ bitCast hsTyP evaledFun (mkFunClosureTyP 0)
+    castedFun <- T.emitInstr @T.FunClosureP $ T.bitCast evaledFun
+    arityPtr <- T.emitInstr $ T.getElemPtr castedFun (T.allKnown @[0,2])
+    funArity <- T.emitInstr $ T.load arityPtr
 
     -- The difference is the number of arguments in the PAP
-    diffArity <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (ident funArity) (ident papArity)))
+    diffArity <- T.emitInstr $ T.ibinop (Sub False False) (T.ident funArity) (T.ident papArity)
 
     -- Allocate argument array
-    argsRawPtr <- genMallocWords (ident funArity)
-    argsPtr <- emitInstr $ bitCast ptrTy argsRawPtr (envTyP 0)
+    argsRawPtr <- T.genMallocWords (T.ident funArity)
+    -- argsPtr <- emitInstr $ bitCast ptrTy argsRawPtr (envTyP 0)
+    argsPtr <- T.emitInstr $ T.bitCast argsRawPtr
 
 
     -- Assemble argument array, part 1: Arguments from PAP
-    papArgs <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedPAP [0,3]
-    genMemcopy (ident papArgs)        (ident argsPtr)
-               (SV (VALUE_Integer 1)) (SV (VALUE_Integer 0))
-               (ident diffArity)
+    papArgs <- T.emitInstr $ T.getElemPtr castedPAP (T.allKnown @[0,3])
+    T.genMemcopy (T.ident papArgs)      (T.ident argsPtr)
+                 (T.mkI64 1)            (T.mkI64 1)
+                 (T.ident diffArity)
 
 
     -- Assemble argument array, part 2: Arguments from caller
-    genMemcopy (ident argsIdent)      (ident argsPtr)
-               (SV (VALUE_Integer 0)) (ident diffArity)
-               (ident papArity)
+    T.genMemcopy (T.ident argsIdent')    (T.ident argsPtr)
+                 (T.mkI64 1)            (T.ident diffArity)
+                 (T.ident papArity)
 
     -- Free the argument array
-    casted <- emitInstr $ bitCast (envTyP 0) argsIdent ptrTy
-    genFree (ident casted)
+    casted <- T.emitInstr $ T.bitCast argsIdent'
+    T.genFree (T.ident casted)
 
     -- Call the function
-    funPtr <- emitInstr $ getElemPtr (mkFunClosureTyP 0) castedFun [0,1]
-    fun <- emitInstr $ INSTR_Load False hsFunTyP (TYPE_Pointer hsFunTyP, ident funPtr) Nothing
-    emitInstr $ INSTR_Call (hsFunTy, fun) [(hsTyP, ident evaledFun), (envTyP 0, ident argsPtr)]
+    funPtr <- T.emitInstr $ T.getElemPtr castedFun (T.allKnown @[0,1])
+    fun <- T.emitInstr $ T.load funPtr
+    ret <- T.emitInstr $ T.call fun (T.ident evaledFun `T.ManyCons` (T.ident argsPtr `T.ManyCons` T.ManyNil))
+    return (unTagged ret)
 
 genRTSCall :: G ()
 genRTSCall = do
