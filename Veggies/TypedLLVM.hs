@@ -172,7 +172,7 @@ data GEP_Arg where
 
 data GEP_Args (args :: [GEP_Arg])  where
     None     :: GEP_Args '[]
-    AKnown   :: KnownNat n => proxy n -> GEP_Args xs -> GEP_Args (Known n : xs)
+    AKnown   :: KnownNat n => GEP_Args xs -> GEP_Args (Known n : xs)
     AUnknown :: Coq_value ::: I64 -> GEP_Args xs -> GEP_Args (Unknown : xs)
 
 -- This does the calculation of the return type
@@ -196,16 +196,19 @@ type family OnlyKnows (nats :: [Nat])  = (r :: [GEP_Arg]) | r -> nats where
 instance AllKnown '[] where
     allKnown = None
 instance (KnownNat n, AllKnown ns) => AllKnown (n:ns) where
-    allKnown = AKnown undefined allKnown
+    allKnown = AKnown allKnown
 
 -- Term level now
 
-getGEPArgs :: GEP_Args args -> [Coq_tvalue]
+getGEPArgs :: forall args. GEP_Args args -> [Coq_tvalue]
 getGEPArgs None = []
-getGEPArgs (AKnown p as) = (G.i32, SV (VALUE_Integer (natVal p))) : getGEPArgs as
-    -- How do I pattern match on AKnown and bind n to pass it to NatVal without
-    -- having a proxy field in AKnown
+getGEPArgs (AKnown as) = (G.i32, SV (VALUE_Integer (natVal @(GetKnown (Head args)) undefined))) : getGEPArgs as
 getGEPArgs (AUnknown v as) = typed v : getGEPArgs as
+
+type family Head (as::[a]) :: a where Head (x:xs) = x
+type family GetKnown (a::GEP_Arg) :: Nat where GetKnown (Known n) = n
+    -- Can I avoid the GetKnown (Head args) dance above, and simply bind
+    -- the n from "AKnown @n as"?
 
 -- The GetElementPointer instruction
 getElemPtr ::
