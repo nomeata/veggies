@@ -308,7 +308,7 @@ genExpr env e
     | (Var v, args) <- collectMoreValArgs e
     , Just (CCall (CCallSpec (StaticTarget _ l _ _) _ _)) <- isFCallId_maybe v = do
     args_locals <- mapM (genArg env) args
-    mkFFICall (unpackFS l) args_locals
+    mkFFICall (unpackFS l) (idType v) args_locals
 
 genExpr env e
     | (f, args) <- collectMoreValArgs e

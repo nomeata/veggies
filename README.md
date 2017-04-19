@@ -16,11 +16,9 @@ All Haskell code in `ghc-prim`, `integer-gmp` and `base` compiles. What does
 not work:
 
  * In out-of-memory (or out-of-stack?) situations, the program segfaults.
- * Many primitive operations and FFI calls are not implemented, and will abort
-   the program with a descriptive message when used. Let me know if you are
-   missing something specific. This includes all the `Integer` functions, so
-   use `Int`.
- * At the moment, we implement call-by-name (thunks do not update themselves).
+ * FFI calls that involve floating points numbers or the `ThreadId# are not
+   implemented, and will abort the program with a descriptive message when used.
+   In general, though, FFI works.
  * No garbage collection (it may be that this will not ever change).
 
 The resulting programs will be much slower than with any other Haskell compiler

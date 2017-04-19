@@ -1,8 +1,14 @@
+{-# LANGUAGE TupleSections #-}
 module Veggies.FFI where
 
 import PrimOp
 import Encoding
 import OccName
+import Type
+import TyCon
+import TysPrim
+import Outputable
+import Util
 
 import Data.List
 import qualified Data.ByteString.Lazy as B
@@ -15,132 +21,132 @@ import Veggies.CodeGenTypes
 import Veggies.ASTUtils
 import Veggies.Common
 
+llvmTypes :: Type -> Maybe (Coq_typ, Coq_typ)
+llvmTypes t | isPtrLike (tyConAppTyCon t) = Just (ptrTy, ptrBoxTy)
+            | isIntLike (tyConAppTyCon t) = Just (i64, intBoxTy)
+            | otherwise                   = Nothing
 
-mkFFICall :: String -> [Coq_ident] -> LG Coq_ident
-mkFFICall "getOrSetGHCConcSignalSignalHandlerStore" args = do
+unpackFFI :: ((Coq_typ, Coq_typ), Coq_ident) -> LG (Coq_typ, Coq_value)
+unpackFFI ((unpackedTy, packedTy),a) = do
+    v <- unboxPrimValue unpackedTy packedTy a
+    return (unpackedTy, ident v)
+
+isPtrLike tc = tc `elem`
+    [ mutableByteArrayPrimTyCon
+    , byteArrayPrimTyCon
+    , addrPrimTyCon
+    , stablePtrPrimTyCon
+    ]
+
+isIntLike tc = tc `elem`
+    [ intPrimTyCon
+    , wordPrimTyCon
+    ]
+
+mkVoidIOCall :: String -> [((Coq_typ, Coq_typ), Coq_ident)] -> Coq_ident -> LG Coq_ident
+mkVoidIOCall name typed_args state_token = do
+    unpacked_args <- mapM unpackFFI typed_args
+    let fun_type = TYPE_Function TYPE_Void (map (fst.fst) typed_args)
+    emitVoidInstr $ INSTR_Call (fun_type, ID_Global (Name name)) unpacked_args
+    genUnboxedUnitTuple state_token
+
+mkIOCall :: String -> (Coq_typ, Coq_typ) -> [((Coq_typ, Coq_typ), Coq_ident)] -> Coq_ident -> LG Coq_ident
+mkIOCall name (res_ty, res_box_ty) typed_args state_token = do
+    unpacked_args <- mapM unpackFFI typed_args
+    let fun_type = TYPE_Function res_ty (map (fst.fst) typed_args)
+    r <- emitInstr $ INSTR_Call (fun_type, ID_Global (Name name)) unpacked_args
+    rBox <- boxPrimValue res_ty res_box_ty (ident r)
+    genReturnIO  state_token rBox
+
+isStateToken :: Type -> Bool
+isStateToken t | Just (tc, [_]) <- splitTyConApp_maybe t
+               , tc == statePrimTyCon
+               = True
+               | otherwise = False
+
+isUnboxedTuple_maybe :: Type -> Maybe [Type]
+isUnboxedTuple_maybe t | Just (tc, args) <- splitTyConApp_maybe t
+                       , isUnboxedTupleTyCon tc
+                       = Just (dropRuntimeRepArgs args)
+                       | otherwise = Nothing
+
+
+explicitlyUnsupported =
+    [ "__hscore_get_saved_termios"
+    , "__hscore_set_saved_termios"
+    , "setIOManagerWakeupFd"
+    , "getMonotonicNSec"
+    , "getOrSetSystemEventThreadEventManagerStore"
+    , "getOrSetSystemEventThreadIOManagerThreadStore"
+    , "getOrSetSystemTimerThreadIOManagerThreadStore"
+    , "getOrSetSystemTimerThreadEventManagerStore"
+    , "setIOManagerControlFd"
+    , "setTimerManagerControlFd"
+    , "lockFile"
+    , "unlockFile"
+    ]
+
+mkFFICall :: String -> Type -> [Coq_ident] -> LG Coq_ident
+
+mkFFICall "getOrSetGHCConcSignalSignalHandlerStore" _ args = do
     genReturnIO (args !! 1) (args !! 0)
-mkFFICall "hs_free_stable_ptr" args = do
+mkFFICall "hs_free_stable_ptr" _ args = do
     genUnboxedUnitTuple (args !! 1)
-mkFFICall "stg_sig_install" args = do
+mkFFICall "stg_sig_install" _ args = do
     genReturnIO (args !! 3) (args !! 1)
-mkFFICall "localeEncoding" args = do
+mkFFICall "localeEncoding" _ args = do
     res <- liftG $ genStringLit "UTF-8"
     genReturnIO (args !! 0) res
-mkFFICall "hs_iconv_open" args = do
-    ptr1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
-    ptr2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
-    let iconv_open_ty = TYPE_Function ptrTy [ptrTy, ptrTy]
-        iconv_open_ident = ID_Global (Name "iconv_open")
-    ptr <- emitInstr $ INSTR_Call (iconv_open_ty, iconv_open_ident)
-        [(ptrTy, ident ptr1), (ptrTy, ident ptr2)]
-    res <- boxPrimValue ptrTy ptrBoxTy (ident ptr)
-    genReturnIO (args !! 2) res
-{-
-size_t hs_iconv(iconv_t cd,
-                const char* * inbuf, size_t * inbytesleft,
-                char* * outbuf, size_t * outbytesleft)
-{ return iconv(cd, (void*)inbuf, inbytesleft, outbuf, outbytesleft); }
--}
-mkFFICall "hs_iconv" args = do
-    ptr1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
-    ptr2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
-    ptr3 <- unboxPrimValue ptrTy ptrBoxTy (args !! 2)
-    ptr4 <- unboxPrimValue ptrTy ptrBoxTy (args !! 3)
-    ptr5 <- unboxPrimValue ptrTy ptrBoxTy (args !! 4)
-    let iconv_ty = TYPE_Function i64 [ptrTy, ptrTy, ptrTy, ptrTy, ptrTy]
-        iconv_ident = ID_Global (Name "iconv")
-    ret <- emitInstr $ INSTR_Call (iconv_ty, iconv_ident)
-        [ (ptrTy, ident ptr1)
-        , (ptrTy, ident ptr2)
-        , (ptrTy, ident ptr3)
-        , (ptrTy, ident ptr4)
-        , (ptrTy, ident ptr5)
-        ]
-    retBox <- boxPrimValue i64 intBoxTy (ident ret)
-    genReturnIO (args !! 5) retBox
-{-
-int hs_iconv_close(iconv_t cd) {
-        return iconv_close(cd);
--}
-mkFFICall "hs_iconv_close" args = do
-    ptr1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
-    let iconv_close_ty = TYPE_Function i64 [ptrTy]
-        iconv_close_ident = ID_Global (Name "iconv_close")
-    ret <- emitInstr $ INSTR_Call (iconv_close_ty, iconv_close_ident)
-        [ (ptrTy, ident ptr1)
-        ]
-    retBox <- boxPrimValue i64 intBoxTy (ident ret)
-    genReturnIO (args !! 1) retBox
-mkFFICall "isatty" args = do
-    int <- unboxPrimValue i64 intBoxTy (args !! 0)
-    let isatty_ty = TYPE_Function i64 [i64]
-        isatty_ident = ID_Global (Name "isatty")
-    ret <- emitInstr $ INSTR_Call (isatty_ty, isatty_ident)
-        [ (i64, ident int)
-        ]
-    retBox <- boxPrimValue i64 intBoxTy (ident ret)
-    genReturnIO (args !! 1) retBox
-mkFFICall "u_towupper" args = do
-    int <- unboxPrimValue i64 intBoxTy (args !! 0)
-    let u_towupper_ty = TYPE_Function i64 [i64]
-        u_towupper_ident = ID_Global (Name "u_towupper")
-    ret <- emitInstr $ INSTR_Call (u_towupper_ty, u_towupper_ident)
-        [ (i64, ident int)
-        ]
-    retBox <- boxPrimValue i64 intBoxTy (ident ret)
-    genReturnIO (args !! 1) retBox
--- extern int fdReady(int fd, int write, int msecs, int isSock);
-mkFFICall "fdReady" args = do
-    int1 <- unboxPrimValue i64 intBoxTy (args !! 0)
-    int2 <- unboxPrimValue i64 intBoxTy (args !! 1)
-    int3 <- unboxPrimValue i64 intBoxTy (args !! 2)
-    int4 <- unboxPrimValue i64 intBoxTy (args !! 3)
-    let fdReady_ty = TYPE_Function i64 [i64, i64, i64, i64]
-        fdReady_ident = ID_Global (Name "fdReady")
-    ret <- emitInstr $ INSTR_Call (fdReady_ty, fdReady_ident)
-        [ (i64, ident int1)
-        , (i64, ident int2)
-        , (i64, ident int3)
-        , (i64, ident int4)
-        ]
-    retBox <- boxPrimValue i64 intBoxTy (ident ret)
-    genReturnIO (args !! 4) retBox
---   c_write :: CInt -> Ptr Word8 -> CSize -> IO CSsize
-mkFFICall "ghczuwrapperZC20ZCbaseZCSystemziPosixziInternalsZCwrite" args = do
-    a1 <- unboxPrimValue i64 intBoxTy (args !! 0)
-    a2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
-    a3 <- unboxPrimValue i64 intBoxTy (args !! 2)
-    let fun_ty = TYPE_Function i64 [i64, ptrTy, i64]
-        fun_ident = ID_Global (Name "ghczuwrapperZC20ZCbaseZCSystemziPosixziInternalsZCwrite")
-    ret <- emitInstr $ INSTR_Call (fun_ty, fun_ident)
-        [ (i64, ident a1)
-        , (ptrTy, ident a2)
-        , (i64, ident a3)
-        ]
-    retBox <- boxPrimValue i64 intBoxTy (ident ret)
-    genReturnIO (args !! 3) retBox
-mkFFICall "debugBelch2" args = do
-    a1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
-    a2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
-    let fun_ty = TYPE_Function TYPE_Void [ptrTy, ptrTy]
-        fun_ident = ID_Global (Name "debugBelch2")
-    emitVoidInstr $ INSTR_Call (fun_ty, fun_ident)
-        [ (ptrTy, ident a1)
-        , (ptrTy, ident a2)
-        ]
-    return (args !! 2)
-mkFFICall "errorBelch2" args = do
-    a1 <- unboxPrimValue ptrTy ptrBoxTy (args !! 0)
-    a2 <- unboxPrimValue ptrTy ptrBoxTy (args !! 1)
-    let fun_ty = TYPE_Function TYPE_Void [ptrTy, ptrTy]
-        fun_ident = ID_Global (Name "errorBelch2")
-    emitVoidInstr $ INSTR_Call (fun_ty, fun_ident)
-        [ (ptrTy, ident a1)
-        , (ptrTy, ident a2)
-        ]
-    return (args !! 2)
-mkFFICall "rtsSupportsBoundThreads" args = do
+mkFFICall "shutdownHaskellAndExit" _ args = do
+    v <- unboxPrimValue i64 intBoxTy (args !! 0)
+    emitVoidInstr $ INSTR_Call (exitTy, exitIdent) [(i64, ident v)]
+    genUnboxedUnitTuple (args !! 2) -- should be unreachable
+mkFFICall "shutdownHaskellAndSignal" _ args = do
+    v <- unboxPrimValue i64 intBoxTy (args !! 0)
+    emitVoidInstr $ INSTR_Call (exitTy, exitIdent) [(i64, ident v)]
+    genUnboxedUnitTuple (args !! 2) -- should be unreachable
+mkFFICall "rtsSupportsBoundThreads" _ args = do
     res <- liftG $ genIntegerLit 0
     genReturnIO (args !! 0) res
+mkFFICall "getNumberOfProcessors" _ args = do
+    res <- liftG $ genIntegerLit 1
+    genReturnIO (args !! 0) res
+mkFFICall "setNumCapabilities" _ args = do
+    genUnboxedUnitTuple (args !! 1)
 
-mkFFICall name _ = printAndExit $ "Unsupported FFI call: " ++ name
+mkFFICall fun_name ty args | fun_name `elem` explicitlyUnsupported=
+    printAndExit $ showSDocUnsafe $ msg
+  where
+    msg = text  "Explicitly unsupported FFI call:" $$
+          text fun_name <+> text "::" <+> ppr ty
+
+-- Now we find out the shape of the call (IO or no IO, return value or not) and
+-- call the appropriate helper.
+
+-- Look through foralls
+mkFFICall name t args | isForAllTy t
+    = mkFFICall name (snd (splitForAllTys t)) args
+
+mkFFICall name typ args
+    | (args_ty, res_ty) <- splitFunTys typ
+    , Just [res_ty'] <- isUnboxedTuple_maybe res_ty
+    , isStateToken res_ty'
+    , isStateToken (last args_ty)
+    , Just llvm_arg_tys <- mapM llvmTypes (init args_ty)
+    = mkVoidIOCall name (zipEqual "mkVoidIOCall" llvm_arg_tys args) (last args)
+
+    | (args_ty, res_ty) <- splitFunTys typ
+    , Just [res_ty1, res_ty2] <- isUnboxedTuple_maybe res_ty
+    , isStateToken res_ty1
+    , isStateToken (last args_ty)
+    , Just llvm_arg_tys <- mapM llvmTypes (init args_ty)
+    , Just llvm_res_ty <- llvmTypes res_ty2
+    = mkIOCall name llvm_res_ty (zipEqual "mkIOCall" llvm_arg_tys args) (last args)
+
+
+mkFFICall fun_name ty args =
+    pprTrace "mkFFICall" msg $
+    printAndExit $ showSDocUnsafe $ msg
+  where
+    msg = text  "Unsupported FFI call type:" $$
+          text fun_name <+> text "::" <+> ppr ty
