@@ -369,6 +369,8 @@ genArg env (Lit (MachStr s)) = do
     liftG $ genByteStringLit s
 genArg env (Lit MachNullAddr) = do
     return nullPtrBoxIdent
+genArg env (Coercion _) = do
+    return (varIdent env coercionTokenId)
 genArg env e = pprTrace "genArg" (ppr e) $
     emitInstr $ noop hsTyP (SV VALUE_Null) -- hack
 
