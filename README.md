@@ -16,6 +16,9 @@ All Haskell code in `ghc-prim`, `integer-gmp` and `base` compiles. What does
 not work:
 
  * In out-of-memory (or out-of-stack?) situations, the program segfaults.
+ * Not all primitive operations have been implemented; the program will abort
+   with a descriptive message when an unimplemented PrimOp is called. Patches
+   to file <./GenPrimOpStubs.hs> are welcome.
  * FFI calls that involve floating points numbers or the `ThreadId# are not
    implemented, and will abort the program with a descriptive message when used.
    In general, though, FFI works.
