@@ -11,6 +11,8 @@ import Data.Either
 import Control.Monad.State
 import Control.Monad.Writer
 import Data.Function
+import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 
 import Ollvm_ast
 
@@ -152,11 +154,12 @@ mkExternalDecl n ty = error $ "mkExternalDecl " ++ show n
 addExternalDeclarations :: [TopLevelThing] -> [TopLevelThing]
 addExternalDeclarations top_level_things = external_decls ++ top_level_things
   where
-    defined_names = mapMaybe getDefinedNames top_level_things
-    global_names  = nubBy ((==) `on` fst) $ concatMap glbNames top_level_things
-    external_names = [ (n,ty) | (n,ty) <- global_names, n `notElem` defined_names ]
+    defined_names = S.fromList $ mapMaybe getDefinedNames top_level_things
+    global_names  = foldMap glbNames top_level_things
+    external_names = [ (n,ty) | (n,ty) <- M.toList global_names, n `S.notMember` defined_names ]
     external_decls = [ mkExternalDecl n ty | (n,ty) <- external_names ]
 
+type GlobalNames = M.Map String Coq_typ
 
 getGlobalId (TLAlias  a) = Just $ a_ident a
 getGlobalId (TLGlobal g) = Just $ g_ident g
@@ -170,14 +173,14 @@ stringFromRawID _        = Nothing
 getDefinedNames tlt = getGlobalId tlt >>= stringFromRawID
 
 class HasGlobalNames a where
-    glbNames :: a -> [(String, Coq_typ)]
+    glbNames :: a -> GlobalNames
 
 class HasGlobalNames' a where
-    glbNames' :: Coq_typ -> a -> [(String, Coq_typ)]
+    glbNames' :: Coq_typ -> a -> GlobalNames
 
 instance HasGlobalNames' Coq_ident where
-    glbNames' t (ID_Global (Name s)) = [(s,t)]
-    glbNames' _ _                    = mzero
+    glbNames' t (ID_Global (Name s)) = M.singleton s t
+    glbNames' _ _                    = mempty
 
 instance HasGlobalNames' e => HasGlobalNames (Coq_typ, e) where
     glbNames (t,v) = glbNames' t v
@@ -212,7 +215,7 @@ instance HasGlobalNames' e => HasGlobalNames (Expr e) where
     glbNames (OP_ExtractValue o _)       = glbNames o
     glbNames (OP_InsertValue o1 o2 _)    = glbNames o1 <> glbNames o2
     glbNames (OP_Select o1 o2 o3)        = glbNames o1 <> glbNames o2 <> glbNames o3
-    glbNames _ = mzero
+    glbNames _ = mempty
 
 
 instance HasGlobalNames' Coq_value where
@@ -235,7 +238,7 @@ instance HasGlobalNames Coq_instr where
     glbNames (INSTR_Alloca _ mbn _)  = glbNames mbn
     glbNames (INSTR_Load _ _ o _)    = glbNames o
     glbNames (INSTR_Store _ o1 o2 _) = glbNames o1 <> glbNames o2
-    glbNames _                       = mzero
+    glbNames _                       = mempty
 
 instance HasGlobalNames Coq_terminator where
     glbNames (TERM_Ret o)            = glbNames o
@@ -247,7 +250,7 @@ instance HasGlobalNames Coq_terminator where
     glbNames (TERM_Resume v)         = glbNames v
     glbNames (TERM_Invoke f as o1 o2)
         = glbNames f <> foldMap glbNames as <> glbNames o1 <> glbNames o2
-    glbNames _                       = mzero
+    glbNames _                       = mempty
 
 instance HasGlobalNames Coq_block where
     glbNames b = glbNames (map snd (blk_instrs b)) <> glbNames (blk_term b)
@@ -258,7 +261,7 @@ instance HasGlobalNames Coq_definition where
 instance HasGlobalNames TopLevelThing where
     glbNames (TLAlias a)  = glbNames a
     glbNames (TLGlobal g) = glbNames g
-    glbNames (TLTyDef _)  = []
-    glbNames (TLDecl _)   = []
+    glbNames (TLTyDef _)  = mempty
+    glbNames (TLDecl _)   = mempty
     glbNames (TLDef d)    = glbNames d
 
