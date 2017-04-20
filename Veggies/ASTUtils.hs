@@ -21,6 +21,7 @@ i1 = TYPE_I 1
 i8 = TYPE_I 8
 i32 = TYPE_I 32
 i64 = TYPE_I 64
+i128 = TYPE_I 128
 ptrTy = TYPE_Pointer i8
 
 data TopLevelThing

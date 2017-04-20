@@ -143,6 +143,8 @@ instance Conv Coq_instr Instruction where
         = A.ICmp (conv cmp) (conv (t,a1)) (conv (t,a2)) []
     conv (INSTR_Op (SV (OP_GetElementPtr _ to path)))
         = A.GetElementPtr False (conv to) (map conv path) []
+    conv (INSTR_Op (SV (OP_ExtractValue to path)))
+        = A.ExtractValue (conv to) (map fromIntegral path) []
     conv (INSTR_Op (SV (OP_Conversion O.Bitcast ty1 o ty2)))
         = A.BitCast (conv (ty1, o)) (conv ty2) []
     conv (INSTR_Op (SV (OP_Conversion O.Ptrtoint ty1 o ty2)))

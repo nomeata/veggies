@@ -183,9 +183,12 @@ unboxPrimValue valTy boxTy v = do
         valTyP = TYPE_Pointer valTy
 
 genReturnIO :: Coq_ident -> Coq_ident -> LG Coq_ident
-genReturnIO s x = do
+genReturnIO = genUnboxedPair
+
+genUnboxedPair :: Coq_ident -> Coq_ident -> LG Coq_ident
+genUnboxedPair a b = do
     (dc, fill) <- allocateDataCon 1 2
-    fill [ s , x ]
+    fill [ a , b ]
     return dc
 
 genUnboxedUnitTuple :: Coq_ident -> LG Coq_ident

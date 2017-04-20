@@ -245,6 +245,57 @@ primOpBody IntMulOp = Just $ mkIntOpBody (Mul False False)
 primOpBody ISllOp   = Just $ mkIntOpBody (Shl False False)
 primOpBody ISraOp   = Just $ mkIntOpBody (AShr False)
 primOpBody AndIOp   = Just $ mkIntOpBody And
+primOpBody IntQuotOp = Just $ mkIntOpBody (SDiv False) -- Maybe fishy?
+primOpBody IntRemOp = Just $ mkIntOpBody SRem -- Maybe fishy?
+primOpBody IntQuotRemOp = Just $ do
+    o1 <- unboxPrimValue i64 intBoxTy (p 0)
+    o2 <- unboxPrimValue i64 intBoxTy (p 1)
+
+    res1 <- emitInstr $ INSTR_Op (SV (OP_IBinop (SDiv False) i64 (ident o1) (ident o2)))
+    res2 <- emitInstr $ INSTR_Op (SV (OP_IBinop SRem         i64 (ident o1) (ident o2)))
+
+    res1Box <- boxPrimValue i64 intBoxTy (ident res1)
+    res2Box <- boxPrimValue i64 intBoxTy (ident res2)
+    genUnboxedPair res1Box res2Box
+
+primOpBody IntNegOp = Just $ do
+    o <- unboxPrimValue i64 intBoxTy (p 0)
+    res <- emitInstr $ INSTR_Op (SV (OP_IBinop (Sub False False) i64 (SV (VALUE_Integer 0)) (ident o)))
+    boxPrimValue i64 intBoxTy (ident res)
+
+primOpBody IntAddCOp = Just $ do
+    o1 <- unboxPrimValue i64 intBoxTy (p 0)
+    o2 <- unboxPrimValue i64 intBoxTy (p  1)
+    struct <- emitInstr $ INSTR_Call (TYPE_Function structTy [i64,i64], ID_Global (Name "llvm.sadd.with.overflow.i64")) [(i64, ident o1), (i64, ident o2)]
+
+    result <- emitInstr $ INSTR_Op (SV (OP_ExtractValue (structTy, ident struct) [0]))
+    resBox <- boxPrimValue i64 intBoxTy (ident result)
+
+    overflow <- emitInstr $ INSTR_Op (SV (OP_ExtractValue (structTy, ident struct) [1]))
+    overflowInt <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i1 (ident overflow) i64))
+    overflowBox <- boxPrimValue i64 intBoxTy (ident overflowInt)
+
+    genUnboxedPair resBox overflowBox
+ where structTy = TYPE_Struct [i64,i1]
+
+primOpBody IntMulMayOfloOp = Just $ do
+    -- This is inefficient, but corret (see documentation for mulIntMayOflo#)
+    liftG $ genIntegerLit 1
+
+primOpBody WordMul2Op = Just $ do
+    o1 <- unboxPrimValue i64 intBoxTy (p 0)
+    o1' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i64 (ident o1) i128))
+    o2 <- unboxPrimValue i64 intBoxTy (p  1)
+    o2' <- emitInstr $ INSTR_Op (SV (OP_Conversion Zext i64 (ident o2) i128))
+
+    res' <- emitInstr $ INSTR_Op (SV (OP_IBinop (Mul False False) i128 (ident o1') (ident o2')))
+    res1 <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i128 (ident res') i64))
+    shifted <- emitInstr $ INSTR_Op (SV (OP_IBinop (Shl False False) i128 (ident res') (SV (VALUE_Integer 64))))
+    res2 <- emitInstr $ INSTR_Op (SV (OP_Conversion Trunc i128 (ident shifted) i64))
+
+    res1Box <- boxPrimValue i64 intBoxTy (ident res1)
+    res2Box <- boxPrimValue i64 intBoxTy (ident res2)
+    genUnboxedPair res2Box res1Box
 
 primOpBody IntGtOp = Just $ mkCmpBody Sgt
 primOpBody IntGeOp = Just $ mkCmpBody Sge
