@@ -72,7 +72,7 @@ the pointer to the object.
  * A function closure is represented as `{%hs* (%hs*)* enter, %hs* (%hs*, [0 x
    %hs*])* fun, i64 arity, [0 x %hs*] captured_vars}`, where the `fun` is a
    function pointer. The function expects the closure as the first argument (to
-   access the capture variables), and a pointer to precisely `arity` further
+   access the captured variables), and a pointer to precisely `arity` further
    arguments.
 
 Every function call should go through `rts_call` which compares the number of
