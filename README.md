@@ -31,6 +31,7 @@ Installation
 ------------
 
  * Ensure that `ghc` is GHC version 8.0, and that `clang-4.0` is in your path.
+ * Run `cabal install groom llvm-hs-pure wl-pprint-text`.
  * Clone the repository
  * Run `./boot.sh some-directory`.
  * You can now use `some-directory/bin/veggies` like you would use `ghc`.
